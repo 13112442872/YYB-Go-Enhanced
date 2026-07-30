@@ -1,0 +1,13 @@
+.git
+.env
+data
+Dockerfile
+compose.yaml
+resource/db
+resource/avatars
+resource/qr
+nginx.htpasswd
+*.db
+*.sqlite
+*.sqlite3
+*.log

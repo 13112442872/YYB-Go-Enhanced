@@ -1,0 +1,82 @@
+# YYB Go Enhanced
+
+应用宝协议服务增强版，提供微信扫码登录、账号与 OpenID 管理、`wx.login` code 获取、凭据按需续期、Web 控制台，以及 Docker 和青龙接入。
+
+## 功能
+
+- 微信扫码添加账号，扫码成功后显示账号 ID、OpenID 和存活状态
+- Web 控制台管理账号并复制 OpenID
+- 提供 `getCode`、`getPhoneNumber` 和 `operateWxData` 接口
+- 应用宝短期凭据失效时使用 refresh token 按需续期
+- SQLite 持久化账号与协议会话
+- Nginx Basic Auth 保护公开的 Web 入口
+- 支持与青龙容器共享 Docker 网络
+
+## Docker Compose 部署
+
+运行环境需要 Docker、Docker Compose，以及名为 `qinglong_default` 的 Docker 网络。如果没有青龙，也可以先创建同名网络：
+
+```bash
+docker network create qinglong_default
+```
+
+创建本地配置：
+
+```bash
+cp .env.example .env
+```
+
+编辑 `.env`，至少修改 `YYB_WEB_PASSWORD`。随后构建并启动：
+
+```bash
+docker compose up -d --build
+```
+
+默认访问地址为 `http://服务器IP:8000`。登录用户名和密码由 `.env` 中的 `YYB_WEB_USER`、`YYB_WEB_PASSWORD` 决定。
+
+如果只允许某个局域网地址监听，可设置：
+
+```dotenv
+YYB_BIND_ADDRESS=192.168.1.10
+```
+
+## 青龙接入
+
+当青龙和本服务都连接到 `qinglong_default` 网络后，青龙环境变量可以填写：
+
+```text
+YYB_SERVER=yyb-go:8000@1
+```
+
+`@` 后可以使用控制台显示的账号 ID 或 OpenID。账号 ID 是本地数据库编号，删除并重新添加账号后可能变化；OpenID 更适合长期配置。
+
+## API 示例
+
+获取 `wx.login` code：
+
+```bash
+curl -X POST http://yyb-go:8000/wxapp/getCode \
+  -H 'Content-Type: application/json' \
+  -d '{"ref":"1","app_id":"wx0000000000000000"}'
+```
+
+主动刷新单个账号状态：
+
+```bash
+curl -X POST http://yyb-go:8000/accounts/refresh \
+  -H 'Content-Type: application/json' \
+  -d '{"ref":"1"}'
+```
+
+Web 控制台内还提供完整的 OpenAPI 文档入口。
+
+## 数据与安全
+
+- 不要提交 `.env`、`data/`、SQLite 数据库、登录凭据或真实 OpenID。
+- 建议仅在可信局域网内运行，不要把内部的 `yyb-go:8000` 接口直接暴露到公网。
+- `wx.login` code 是短期且一次性的；refresh token 也可能被服务端撤销，失效后需要重新扫码。
+- 本项目仅供学习和个人研究使用，请遵守相关平台条款及所在地法律法规。
+
+## 来源说明
+
+本项目基于 [SuperNaiBA/YYB_GO](https://github.com/SuperNaiBA/YYB_GO) 整理和增强，主要补充了账号信息展示、OpenID 可见性、Web 控制台资源修复、Docker 部署与访问保护。请同时遵守上游项目的授权条件；如需分发或商业使用，请先取得相应权利人的许可。
