@@ -25,17 +25,32 @@ type qingLongClient struct {
 }
 
 type qingLongCron struct {
-	ID                int64  `json:"id"`
-	Name              string `json:"name"`
-	Command           string `json:"command"`
-	Schedule          string `json:"schedule"`
-	Status            int    `json:"status"`
-	PID               any    `json:"pid"`
-	LogPath           string `json:"log_path"`
-	LastRunningTime   int64  `json:"last_running_time"`
-	LastExecutionTime int64  `json:"last_execution_time"`
-	CreatedAt         string `json:"createdAt"`
-	UpdatedAt         string `json:"updatedAt"`
+	ID                int64   `json:"id"`
+	Name              string  `json:"name"`
+	Command           string  `json:"command"`
+	Schedule          string  `json:"schedule"`
+	Status            float64 `json:"status"`
+	IsDisabled        *int    `json:"isDisabled"`
+	PID               any     `json:"pid"`
+	LogPath           string  `json:"log_path"`
+	LastRunningTime   int64   `json:"last_running_time"`
+	LastExecutionTime int64   `json:"last_execution_time"`
+	CreatedAt         string  `json:"createdAt"`
+	UpdatedAt         string  `json:"updatedAt"`
+}
+
+func (c qingLongCron) enabled() bool {
+	if c.IsDisabled != nil {
+		return *c.IsDisabled == 0
+	}
+	return c.Status == 0
+}
+
+func (c qingLongCron) running() bool {
+	if c.IsDisabled != nil {
+		return c.Status >= 0 && c.Status < 1
+	}
+	return c.PID != nil
 }
 
 type qingLongEnv struct {

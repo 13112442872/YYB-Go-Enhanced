@@ -109,13 +109,13 @@ func (a *App) handleQingLongJobs(w http.ResponseWriter, r *http.Request) {
 			ScriptKey:        source.Key,
 			Name:             source.Name,
 			Schedule:         source.Schedule,
-			GlobalTaskActive: source.Cron.Status == 0,
+			GlobalTaskActive: source.Cron.enabled(),
 		}
 		if job, exists := jobsByKey[source.Key]; exists {
 			if cron, found := cronsByID[job.QLCronID]; found {
 				item.Provisioned = true
-				item.Enabled = cron.Status == 0
-				item.Running = cron.PID != nil
+				item.Enabled = cron.enabled()
+				item.Running = cron.running()
 				item.QLCronID = cron.ID
 				item.LastExecutionAt = cron.LastExecutionTime
 				item.LastRunningTime = cron.LastRunningTime

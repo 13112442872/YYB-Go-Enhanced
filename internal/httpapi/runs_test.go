@@ -24,6 +24,8 @@ type fakeQingLong struct {
 	commands []string
 }
 
+func intPointer(value int) *int { return &value }
+
 func newFakeQingLong(t *testing.T) (*fakeQingLong, *httptest.Server) {
 	t.Helper()
 	fake := &fakeQingLong{
@@ -31,8 +33,8 @@ func newFakeQingLong(t *testing.T) (*fakeQingLong, *httptest.Server) {
 		nextEnv:  50,
 		envs:     []qingLongEnv{},
 		crons: []qingLongCron{
-			{ID: 1, Name: "美的会员", Command: "task SuperNaiBA_YYB-GO-Script/MDHY.js", Schedule: "11 8 * * *", Status: 1},
-			{ID: 2, Name: "EOOS", Command: "task SuperNaiBA_YYB-GO-Script/eoos/eoos_checkin.py", Schedule: "30 8 * * *", Status: 1},
+			{ID: 1, Name: "美的会员", Command: "task SuperNaiBA_YYB-GO-Script/MDHY.js", Schedule: "11 8 * * *", Status: 1, IsDisabled: intPointer(1)},
+			{ID: 2, Name: "EOOS", Command: "task SuperNaiBA_YYB-GO-Script/eoos/eoos_checkin.py", Schedule: "30 8 * * *", Status: 1, IsDisabled: intPointer(1)},
 		},
 	}
 	server := httptest.NewServer(http.HandlerFunc(fake.serveHTTP))
@@ -61,7 +63,8 @@ func (f *fakeQingLong) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewDecoder(r.Body).Decode(&in)
 		in.ID = f.nextCron
 		f.nextCron++
-		in.Status = 0
+		in.Status = 1
+		in.IsDisabled = intPointer(0)
 		f.crons = append(f.crons, in)
 		f.commands = append(f.commands, in.Command)
 		write(in)
@@ -78,14 +81,14 @@ func (f *fakeQingLong) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodPut && (r.URL.Path == "/open/crons/enable" || r.URL.Path == "/open/crons/disable"):
 		var ids []int64
 		_ = json.NewDecoder(r.Body).Decode(&ids)
-		status := 1
+		disabled := 1
 		if strings.HasSuffix(r.URL.Path, "/enable") {
-			status = 0
+			disabled = 0
 		}
 		for i := range f.crons {
 			for _, id := range ids {
 				if f.crons[i].ID == id {
-					f.crons[i].Status = status
+					f.crons[i].IsDisabled = intPointer(disabled)
 				}
 			}
 		}
@@ -204,6 +207,46 @@ func TestAccountJobsAreIsolatedDisabledByDefaultAndRunExplicitly(t *testing.T) {
 	defer fake.mu.Unlock()
 	if len(fake.runIDs) != 1 {
 		t.Fatalf("explicit run IDs = %v", fake.runIDs)
+	}
+}
+
+func TestAccountJobUsesCurrentQingLongStateFields(t *testing.T) {
+	fake, server := newFakeQingLong(t)
+	_, handler, ref := newRunsTestApp(t, server.URL)
+	_ = apiRequest(t, handler, http.MethodPut, "/api/qinglong/jobs/enable", map[string]any{
+		"ref": ref, "script_key": "MDHY.js", "enabled": true,
+	})
+
+	fake.mu.Lock()
+	fake.crons[0].IsDisabled = intPointer(0)
+	for i := range fake.crons {
+		if strings.HasPrefix(fake.crons[i].Name, "[YYB:") {
+			fake.crons[i].Status = 1
+			fake.crons[i].PID = 12345
+			fake.crons[i].IsDisabled = intPointer(0)
+		}
+	}
+	fake.mu.Unlock()
+
+	idle := apiRequest(t, handler, http.MethodGet, "/api/qinglong/jobs?ref="+url.QueryEscape(ref), nil)
+	if idle.Code != http.StatusOK || !strings.Contains(idle.Body.String(), `"enabled":true`) || !strings.Contains(idle.Body.String(), `"running":false`) {
+		t.Fatalf("idle current QingLong job response = %d %s", idle.Code, idle.Body.String())
+	}
+	if !strings.Contains(idle.Body.String(), `"global_task_active":true`) {
+		t.Fatalf("current QingLong enabled source was not detected: %s", idle.Body.String())
+	}
+
+	fake.mu.Lock()
+	for i := range fake.crons {
+		if strings.HasPrefix(fake.crons[i].Name, "[YYB:") {
+			fake.crons[i].Status = 0.5
+		}
+	}
+	fake.mu.Unlock()
+
+	queued := apiRequest(t, handler, http.MethodGet, "/api/qinglong/jobs?ref="+url.QueryEscape(ref), nil)
+	if queued.Code != http.StatusOK || !strings.Contains(queued.Body.String(), `"running":true`) {
+		t.Fatalf("queued current QingLong job response = %d %s", queued.Code, queued.Body.String())
 	}
 }
 
