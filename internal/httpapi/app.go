@@ -33,6 +33,11 @@ type Config struct {
 	QRSessionTTL      time.Duration
 	KeepAliveInterval time.Duration
 	KeepAliveAhead    time.Duration
+	QingLongURL       string
+	QingLongClientID  string
+	QingLongSecret    string
+	QingLongServer    string
+	QingLongRepo      string
 }
 
 type App struct {
@@ -42,6 +47,7 @@ type App struct {
 	pool               *protocol.Pool
 	qr                 *qr.Client
 	refreshLoginBuffer func(context.Context, protocol.LoginBufferCredentials) (protocol.LoginBufferResult, error)
+	qinglong           *qingLongClient
 
 	mu         sync.Mutex
 	qrSessions map[string]*qr.Session
@@ -80,6 +86,12 @@ func NewApp(cfg Config) (*App, error) {
 	if cfg.KeepAliveInterval > 0 && cfg.KeepAliveAhead <= 0 {
 		cfg.KeepAliveAhead = 45 * time.Minute
 	}
+	if cfg.QingLongServer == "" {
+		cfg.QingLongServer = "yyb-go:8000"
+	}
+	if cfg.QingLongRepo == "" {
+		cfg.QingLongRepo = "SuperNaiBA_YYB-GO-Script"
+	}
 	res, err := ensureResources(cfg.ResourceRoot)
 	if err != nil {
 		return nil, err
@@ -105,6 +117,7 @@ func NewApp(cfg Config) (*App, error) {
 		pool:               pool,
 		qr:                 qrClient,
 		refreshLoginBuffer: qrClient.RefreshLoginBuffer,
+		qinglong:           newQingLongClient(cfg.QingLongURL, cfg.QingLongClientID, cfg.QingLongSecret, cfg.RequestTimeout),
 		qrSessions:         map[string]*qr.Session{},
 	}
 	app.startKeepAlive()
@@ -133,6 +146,7 @@ func (a *App) Handler() http.Handler {
 
 	router.Any("/", gin.WrapF(a.handleIndex))
 	router.Any("/scan", gin.WrapF(a.handleScan))
+	router.Any("/runs", gin.WrapF(a.handleRuns))
 	router.Any("/docs", func(c *gin.Context) {
 		c.Redirect(http.StatusMovedPermanently, "/docs/index.html")
 	})
@@ -148,6 +162,12 @@ func (a *App) Handler() http.Handler {
 	router.Any("/accounts/avatar", gin.WrapF(a.handleAccountAvatar))
 	router.Any("/accounts/refresh", gin.WrapF(a.handleAccountRefresh))
 	router.Any("/accounts/resync", gin.WrapF(a.handleAccountResync))
+	router.Any("/api/qinglong/status", gin.WrapF(a.handleQingLongStatus))
+	router.Any("/api/qinglong/jobs", gin.WrapF(a.handleQingLongJobs))
+	router.Any("/api/qinglong/jobs/enable", gin.WrapF(a.handleQingLongJobEnable))
+	router.Any("/api/qinglong/jobs/run", gin.WrapF(a.handleQingLongJobRun))
+	router.Any("/api/qinglong/jobs/log", gin.WrapF(a.handleQingLongJobLog))
+	router.Any("/api/qinglong/push", gin.WrapF(a.handleQingLongPush))
 	router.Any("/wxapp/getCode", gin.WrapF(a.handleGetCode))
 	router.Any("/wxapp/getPhoneNumber", gin.WrapF(a.handleGetPhoneNumber))
 	router.Any("/wxapp/operateWxData", gin.WrapF(a.handleOperateWXData))

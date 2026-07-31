@@ -11,6 +11,8 @@
 - SQLite 持久化账号与协议会话
 - Nginx Basic Auth 保护公开的 Web 入口
 - 支持与青龙容器共享 Docker 网络
+- 账号运行管理：每个微信账号独立创建、启停和运行青龙脚本，并查看日志
+- 账号独立推送：支持 Server酱、PushPlus 和企业微信机器人，密钥只保存在青龙环境变量
 
 ## Docker Compose 部署
 
@@ -82,6 +84,22 @@ curl -X POST http://yyb-go:8000/accounts/refresh \
 ```
 
 Web 控制台内还提供完整的 OpenAPI 文档入口。
+
+## 账号运行管理
+
+在 `.env` 中配置青龙 OpenAPI 后，打开 `/runs`：
+
+```dotenv
+QL_URL=http://qinglong:5700
+QL_CLIENT_ID=你的青龙应用 Client ID
+QL_CLIENT_SECRET=你的青龙应用 Client Secret
+YYB_QINGLONG_SERVER=yyb-go:8000
+YYB_QINGLONG_REPO=SuperNaiBA_YYB-GO-Script
+```
+
+管理页只发现订阅中直接使用 `YYB_SERVER` 的 `.js` 和 `.py` 任务。每个“账号 + 脚本”会创建一个独立青龙任务，新任务默认关闭；手动点击“运行一次”才会立即执行。账号推送 Token 不写入任务命令和 YYB 数据库，接口也不会返回明文。
+
+如果原订阅生成的全局任务仍在运行，管理页会显示重复运行提示。迁移到账号任务后，请在青龙中停用对应的旧全局任务。
 
 ## 数据与安全
 

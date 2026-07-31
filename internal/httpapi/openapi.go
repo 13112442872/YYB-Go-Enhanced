@@ -15,6 +15,7 @@ func newOpenAPISpec() map[string]any {
 			{"name": "health", "description": "服务健康检查"},
 			{"name": "qr", "description": "微信扫码登录"},
 			{"name": "accounts", "description": "已保存的微信账号"},
+			{"name": "qinglong", "description": "账号级青龙任务与推送管理"},
 			{"name": "wxapp", "description": "wxapp 业务接口调用"},
 		},
 		"paths": map[string]any{
@@ -129,6 +130,55 @@ func newOpenAPISpec() map[string]any {
 					}),
 				),
 			},
+			"/api/qinglong/status": map[string]any{
+				"get": openAPIOperation(
+					[]string{"qinglong"}, "检查青龙连接状态", nil, nil,
+					defaulted(map[string]any{"200": jsonResponse("青龙配置和连接状态。", refSchema("QingLongStatus"))}),
+				),
+			},
+			"/api/qinglong/jobs": map[string]any{
+				"get": openAPIOperation(
+					[]string{"qinglong"}, "获取账号的兼容脚本任务",
+					[]map[string]any{queryStringParam("ref", "账号 ID、UIN 或 openid。", true)}, nil,
+					defaulted(map[string]any{"200": jsonResponse("账号任务列表。", refSchema("AccountJobsResponse"))}),
+				),
+			},
+			"/api/qinglong/jobs/enable": map[string]any{
+				"put": openAPIOperation(
+					[]string{"qinglong"}, "启用或停用账号脚本定时任务", nil,
+					jsonRequestBody(refSchema("JobActionRequest")),
+					defaulted(map[string]any{"200": jsonResponse("任务开关结果。", freeFormObjectSchema("任务状态。"))}),
+				),
+			},
+			"/api/qinglong/jobs/run": map[string]any{
+				"post": openAPIOperation(
+					[]string{"qinglong"}, "立即运行账号脚本一次", nil,
+					jsonRequestBody(refSchema("JobRunRequest")),
+					defaulted(map[string]any{"202": jsonResponse("任务已提交到青龙。", freeFormObjectSchema("任务提交状态。"))}),
+				),
+			},
+			"/api/qinglong/jobs/log": map[string]any{
+				"get": openAPIOperation(
+					[]string{"qinglong"}, "获取账号脚本最近日志",
+					[]map[string]any{
+						queryStringParam("ref", "账号 ID、UIN 或 openid。", true),
+						queryStringParam("script_key", "订阅仓库内的受支持脚本路径。", true),
+					}, nil,
+					defaulted(map[string]any{"200": jsonResponse("最近运行日志。", refSchema("JobLogResponse"))}),
+				),
+			},
+			"/api/qinglong/push": map[string]any{
+				"get": openAPIOperation(
+					[]string{"qinglong"}, "获取账号推送设置",
+					[]map[string]any{queryStringParam("ref", "账号 ID、UIN 或 openid。", true)}, nil,
+					defaulted(map[string]any{"200": jsonResponse("推送配置状态，不返回密钥。", refSchema("PushSetting"))}),
+				),
+				"put": openAPIOperation(
+					[]string{"qinglong"}, "保存账号推送设置", nil,
+					jsonRequestBody(refSchema("PushSettingRequest")),
+					defaulted(map[string]any{"200": jsonResponse("保存后的推送配置状态。", refSchema("PushSetting"))}),
+				),
+			},
 			"/wxapp/getCode": map[string]any{
 				"post": openAPIOperation(
 					[]string{"wxapp"},
@@ -237,6 +287,53 @@ func newOpenAPISpec() map[string]any {
 				"WxappResponse": objectSchema([]string{"openid", "result"}, map[string]any{
 					"openid": map[string]any{"type": "string"},
 					"result": freeFormObjectSchema("wxapp 接口返回结果。"),
+				}),
+				"QingLongStatus": objectSchema([]string{"configured", "connected"}, map[string]any{
+					"configured": map[string]any{"type": "boolean"},
+					"connected":  map[string]any{"type": "boolean"},
+					"error":      nullableStringSchema("连接失败时的错误摘要。"),
+				}),
+				"AccountJob": objectSchema([]string{"script_key", "name", "schedule", "provisioned", "enabled", "running"}, map[string]any{
+					"script_key":         map[string]any{"type": "string"},
+					"name":               map[string]any{"type": "string"},
+					"schedule":           map[string]any{"type": "string"},
+					"provisioned":        map[string]any{"type": "boolean"},
+					"enabled":            map[string]any{"type": "boolean"},
+					"running":            map[string]any{"type": "boolean"},
+					"ql_cron_id":         nullableInt64Schema(),
+					"last_execution_at":  int64Schema(),
+					"last_running_time":  int64Schema(),
+					"global_task_active": map[string]any{"type": "boolean"},
+				}),
+				"AccountJobsResponse": objectSchema([]string{"account", "jobs", "count"}, map[string]any{
+					"account": refSchema("AccountPublic"),
+					"jobs":    arraySchema(refSchema("AccountJob")),
+					"count":   map[string]any{"type": "integer"},
+				}),
+				"JobActionRequest": objectSchema([]string{"ref", "script_key", "enabled"}, map[string]any{
+					"ref":        map[string]any{"type": "string"},
+					"script_key": map[string]any{"type": "string"},
+					"enabled":    map[string]any{"type": "boolean"},
+				}),
+				"JobRunRequest": objectSchema([]string{"ref", "script_key"}, map[string]any{
+					"ref":        map[string]any{"type": "string"},
+					"script_key": map[string]any{"type": "string"},
+				}),
+				"JobLogResponse": objectSchema([]string{"script_key", "ql_cron_id", "log"}, map[string]any{
+					"script_key": map[string]any{"type": "string"},
+					"ql_cron_id": int64Schema(),
+					"log":        map[string]any{"type": "string"},
+				}),
+				"PushSetting": objectSchema([]string{"channel", "token_configured", "topic_configured"}, map[string]any{
+					"channel":          map[string]any{"type": "string", "enum": []string{"none", "serverchan", "pushplus", "qywx"}},
+					"token_configured": map[string]any{"type": "boolean"},
+					"topic_configured": map[string]any{"type": "boolean"},
+				}),
+				"PushSettingRequest": objectSchema([]string{"ref", "channel"}, map[string]any{
+					"ref":     map[string]any{"type": "string"},
+					"channel": map[string]any{"type": "string", "enum": []string{"none", "serverchan", "pushplus", "qywx"}},
+					"token":   map[string]any{"type": "string", "writeOnly": true, "description": "留空时保留已配置密钥。"},
+					"topic":   nullableStringSchema("PushPlus 群组编码。"),
 				}),
 			},
 		},

@@ -51,6 +51,27 @@ CREATE TABLE IF NOT EXISTS features (
     description TEXT,
     enabled     INTEGER NOT NULL DEFAULT 1
 );
+
+CREATE TABLE IF NOT EXISTS account_script_jobs (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id    INTEGER NOT NULL REFERENCES wechat_accounts(id) ON DELETE CASCADE,
+    script_key    TEXT    NOT NULL,
+    ql_cron_id    INTEGER NOT NULL,
+    schedule      TEXT    NOT NULL,
+    created_at    INTEGER NOT NULL,
+    updated_at    INTEGER NOT NULL,
+    UNIQUE(account_id, script_key)
+);
+CREATE INDEX IF NOT EXISTS idx_account_script_jobs_account ON account_script_jobs(account_id);
+
+CREATE TABLE IF NOT EXISTS account_push_settings (
+    account_id     INTEGER PRIMARY KEY REFERENCES wechat_accounts(id) ON DELETE CASCADE,
+    channel        TEXT    NOT NULL DEFAULT 'none',
+    token_env_name TEXT    NOT NULL DEFAULT '',
+    topic_env_name TEXT    NOT NULL DEFAULT '',
+    created_at     INTEGER NOT NULL,
+    updated_at     INTEGER NOT NULL
+);
 `
 
 var defaultFeatures = []Feature{

@@ -17,6 +17,12 @@ services:
       - ${YYB_KEEPALIVE_INTERVAL:-30m}
       - -keepalive-ahead
       - ${YYB_KEEPALIVE_AHEAD:-45m}
+    environment:
+      QL_URL: ${QL_URL:-http://qinglong:5700}
+      QL_CLIENT_ID: ${QL_CLIENT_ID:-}
+      QL_CLIENT_SECRET: ${QL_CLIENT_SECRET:-}
+      YYB_QINGLONG_SERVER: ${YYB_QINGLONG_SERVER:-yyb-go:8000}
+      YYB_QINGLONG_REPO: ${YYB_QINGLONG_REPO:-SuperNaiBA_YYB-GO-Script}
     volumes:
       - ./data/db:/app/resource/db
       - ./data/avatars:/app/resource/avatars

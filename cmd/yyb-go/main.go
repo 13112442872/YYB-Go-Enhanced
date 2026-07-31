@@ -36,6 +36,11 @@ func main() {
 		QRSessionTTL:      5 * time.Minute,
 		KeepAliveInterval: *keepAliveInterval,
 		KeepAliveAhead:    *keepAliveAhead,
+		QingLongURL:       os.Getenv("QL_URL"),
+		QingLongClientID:  os.Getenv("QL_CLIENT_ID"),
+		QingLongSecret:    os.Getenv("QL_CLIENT_SECRET"),
+		QingLongServer:    os.Getenv("YYB_QINGLONG_SERVER"),
+		QingLongRepo:      os.Getenv("YYB_QINGLONG_REPO"),
 	}
 
 	app, err := httpapi.NewApp(cfg)
