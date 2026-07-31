@@ -15,13 +15,15 @@ import (
 )
 
 type fakeQingLong struct {
-	mu       sync.Mutex
-	crons    []qingLongCron
-	envs     []qingLongEnv
-	nextCron int64
-	nextEnv  int64
-	runIDs   []int64
-	commands []string
+	mu          sync.Mutex
+	crons       []qingLongCron
+	envs        []qingLongEnv
+	nextCron    int64
+	nextEnv     int64
+	runIDs      []int64
+	commands    []string
+	taskBefores []string
+	logs        []qingLongLogEntry
 }
 
 func intPointer(value int) *int { return &value }
@@ -65,16 +67,21 @@ func (f *fakeQingLong) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		f.nextCron++
 		in.Status = 1
 		in.IsDisabled = intPointer(0)
+		if in.LogName == "" {
+			in.LogName = fmt.Sprintf("managed-%d", in.ID)
+		}
 		f.crons = append(f.crons, in)
 		f.commands = append(f.commands, in.Command)
+		f.taskBefores = append(f.taskBefores, in.TaskBefore)
 		write(in)
 	case r.Method == http.MethodPut && r.URL.Path == "/open/crons":
 		var in qingLongCron
 		_ = json.NewDecoder(r.Body).Decode(&in)
 		for i := range f.crons {
 			if f.crons[i].ID == in.ID {
-				f.crons[i].Name, f.crons[i].Command, f.crons[i].Schedule = in.Name, in.Command, in.Schedule
+				f.crons[i].Name, f.crons[i].Command, f.crons[i].Schedule, f.crons[i].TaskBefore, f.crons[i].LogName = in.Name, in.Command, in.Schedule, in.TaskBefore, in.LogName
 				f.commands = append(f.commands, in.Command)
+				f.taskBefores = append(f.taskBefores, in.TaskBefore)
 			}
 		}
 		write(nil)
@@ -97,9 +104,25 @@ func (f *fakeQingLong) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		var ids []int64
 		_ = json.NewDecoder(r.Body).Decode(&ids)
 		f.runIDs = append(f.runIDs, ids...)
+		for i := range f.crons {
+			for _, id := range ids {
+				if f.crons[i].ID != id {
+					continue
+				}
+				filename := "2026-07-31-14-30-00-000.log"
+				key := f.crons[i].LogName + "/" + filename
+				f.crons[i].LogPath = key
+				f.crons[i].LastExecutionTime = 1785480000
+				f.logs = append(f.logs, qingLongLogEntry{Title: f.crons[i].LogName, Key: f.crons[i].LogName, Type: "directory", Children: []qingLongLogEntry{{Title: filename, Key: key, Parent: f.crons[i].LogName, Type: "file", Size: 88, CreateTime: 1785480000000}}})
+			}
+		}
 		write(nil)
 	case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/log"):
 		write("fake account log")
+	case r.Method == http.MethodGet && r.URL.Path == "/open/logs":
+		write(f.logs)
+	case r.Method == http.MethodGet && r.URL.Path == "/open/logs/detail":
+		write("fake account history log")
 	case r.Method == http.MethodGet && r.URL.Path == "/open/envs":
 		write(f.envs)
 	case r.Method == http.MethodPost && r.URL.Path == "/open/envs":
@@ -193,8 +216,12 @@ func TestAccountJobsAreIsolatedDisabledByDefaultAndRunExplicitly(t *testing.T) {
 	}
 	command := fake.commands[len(fake.commands)-1]
 	fake.mu.Unlock()
-	if !strings.Contains(command, "YYB_SERVER='yyb-go:8000@"+ref+"'") || !strings.HasSuffix(command, "task SuperNaiBA_YYB-GO-Script/MDHY.js") {
+	if command != "task SuperNaiBA_YYB-GO-Script/MDHY.js" {
 		t.Fatalf("managed command = %q", command)
+	}
+	taskBefore := fake.taskBefores[len(fake.taskBefores)-1]
+	if !strings.Contains(taskBefore, "export YYB_SERVER='yyb-go:8000@"+ref+"'") {
+		t.Fatalf("managed task_before = %q", taskBefore)
 	}
 
 	run := apiRequest(t, handler, http.MethodPost, "/api/qinglong/jobs/run", map[string]any{
@@ -232,6 +259,9 @@ func TestAccountJobUsesCurrentQingLongStateFields(t *testing.T) {
 	if idle.Code != http.StatusOK || !strings.Contains(idle.Body.String(), `"enabled":true`) || !strings.Contains(idle.Body.String(), `"running":false`) {
 		t.Fatalf("idle current QingLong job response = %d %s", idle.Code, idle.Body.String())
 	}
+	if !strings.Contains(idle.Body.String(), `"name":"美的会员"`) || strings.Contains(idle.Body.String(), `"name":"[YYB:`) {
+		t.Fatalf("managed account task replaced the source script: %s", idle.Body.String())
+	}
 	if !strings.Contains(idle.Body.String(), `"global_task_active":true`) {
 		t.Fatalf("current QingLong enabled source was not detected: %s", idle.Body.String())
 	}
@@ -247,6 +277,50 @@ func TestAccountJobUsesCurrentQingLongStateFields(t *testing.T) {
 	queued := apiRequest(t, handler, http.MethodGet, "/api/qinglong/jobs?ref="+url.QueryEscape(ref), nil)
 	if queued.Code != http.StatusOK || !strings.Contains(queued.Body.String(), `"running":true`) {
 		t.Fatalf("queued current QingLong job response = %d %s", queued.Code, queued.Body.String())
+	}
+}
+
+func TestAccountRunHistoryAndLogAreScopedToAccount(t *testing.T) {
+	_, server := newFakeQingLong(t)
+	app, handler, ref := newRunsTestApp(t, server.URL)
+	run := apiRequest(t, handler, http.MethodPost, "/api/qinglong/jobs/run", map[string]any{
+		"ref": ref, "script_key": "MDHY.js",
+	})
+	if run.Code != http.StatusAccepted || !strings.Contains(run.Body.String(), `"account_id":1`) {
+		t.Fatalf("run response = %d %s", run.Code, run.Body.String())
+	}
+
+	firstLogKey := managedLogName(1, "MDHY.js") + "/2026-07-31-14-30-00-000.log"
+	history := apiRequest(t, handler, http.MethodGet, "/api/qinglong/runs?ref="+url.QueryEscape(ref), nil)
+	if history.Code != http.StatusOK || !strings.Contains(history.Body.String(), `"script_key":"MDHY.js"`) || !strings.Contains(history.Body.String(), `"log_key":"`+firstLogKey+`"`) {
+		t.Fatalf("account history response = %d %s", history.Code, history.Body.String())
+	}
+
+	logKey := url.QueryEscape(firstLogKey)
+	log := apiRequest(t, handler, http.MethodGet, "/api/qinglong/runs/log?ref="+url.QueryEscape(ref)+"&log_key="+logKey, nil)
+	if log.Code != http.StatusOK || !strings.Contains(log.Body.String(), "fake account history log") {
+		t.Fatalf("account log response = %d %s", log.Code, log.Body.String())
+	}
+
+	status := "alive"
+	second, err := app.db.UpsertAccount(context.Background(), "second-openid", "buffer", nil, nil, nil, nil, nil, &status)
+	if err != nil {
+		t.Fatalf("seed second account: %v", err)
+	}
+	secondRef := fmt.Sprintf("%d", second.ID)
+	secondRun := apiRequest(t, handler, http.MethodPost, "/api/qinglong/jobs/run", map[string]any{"ref": secondRef, "script_key": "MDHY.js"})
+	if secondRun.Code != http.StatusAccepted {
+		t.Fatalf("second account run response = %d %s", secondRun.Code, secondRun.Body.String())
+	}
+	secondLogKey := managedLogName(second.ID, "MDHY.js") + "/2026-07-31-14-30-00-000.log"
+	secondHistory := apiRequest(t, handler, http.MethodGet, "/api/qinglong/runs?ref="+url.QueryEscape(secondRef), nil)
+	if secondHistory.Code != http.StatusOK || !strings.Contains(secondHistory.Body.String(), secondLogKey) || strings.Contains(secondHistory.Body.String(), firstLogKey) {
+		t.Fatalf("second account history was not isolated = %d %s", secondHistory.Code, secondHistory.Body.String())
+	}
+
+	foreign := apiRequest(t, handler, http.MethodGet, "/api/qinglong/runs/log?ref="+url.QueryEscape(ref)+"&log_key="+url.QueryEscape(secondLogKey), nil)
+	if foreign.Code != http.StatusNotFound {
+		t.Fatalf("foreign account log response = %d %s", foreign.Code, foreign.Body.String())
 	}
 }
 
@@ -286,7 +360,12 @@ func TestPushSecretStaysInQingLongEnvironment(t *testing.T) {
 			t.Fatalf("task command leaked secret: %q", command)
 		}
 	}
-	if !strings.Contains(fake.commands[len(fake.commands)-1], "${YYB_RUN_ACCOUNT_"+ref+"_SERVERCHAN_KEY:-}") {
-		t.Fatalf("task command does not reference account environment: %q", fake.commands[len(fake.commands)-1])
+	for _, taskBefore := range fake.taskBefores {
+		if strings.Contains(taskBefore, secret) {
+			t.Fatalf("task_before leaked secret: %q", taskBefore)
+		}
+	}
+	if !strings.Contains(fake.taskBefores[len(fake.taskBefores)-1], "${YYB_RUN_ACCOUNT_"+ref+"_SERVERCHAN_KEY:-}") {
+		t.Fatalf("task_before does not reference account environment: %q", fake.taskBefores[len(fake.taskBefores)-1])
 	}
 }

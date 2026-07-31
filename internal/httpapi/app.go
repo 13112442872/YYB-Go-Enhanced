@@ -167,6 +167,8 @@ func (a *App) Handler() http.Handler {
 	router.Any("/api/qinglong/jobs/enable", gin.WrapF(a.handleQingLongJobEnable))
 	router.Any("/api/qinglong/jobs/run", gin.WrapF(a.handleQingLongJobRun))
 	router.Any("/api/qinglong/jobs/log", gin.WrapF(a.handleQingLongJobLog))
+	router.Any("/api/qinglong/runs", gin.WrapF(a.handleQingLongRuns))
+	router.Any("/api/qinglong/runs/log", gin.WrapF(a.handleQingLongRunLog))
 	router.Any("/api/qinglong/push", gin.WrapF(a.handleQingLongPush))
 	router.Any("/wxapp/getCode", gin.WrapF(a.handleGetCode))
 	router.Any("/wxapp/getPhoneNumber", gin.WrapF(a.handleGetPhoneNumber))

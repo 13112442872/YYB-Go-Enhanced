@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"yyb_go/internal/store"
 )
@@ -54,6 +56,18 @@ type pushSettingPublic struct {
 	Channel         string `json:"channel"`
 	TokenConfigured bool   `json:"token_configured"`
 	TopicConfigured bool   `json:"topic_configured"`
+}
+
+type accountRunPublic struct {
+	AccountID  int64  `json:"account_id"`
+	ScriptKey  string `json:"script_key"`
+	Name       string `json:"name"`
+	QLCronID   int64  `json:"ql_cron_id"`
+	LogKey     string `json:"log_key"`
+	StartedAt  int64  `json:"started_at"`
+	Size       int64  `json:"size"`
+	Running    bool   `json:"running"`
+	TaskStatus string `json:"status"`
 }
 
 func (a *App) handleRuns(w http.ResponseWriter, r *http.Request) {
@@ -196,7 +210,7 @@ func (a *App) handleQingLongJobRun(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusAccepted, map[string]any{"started": true, "ql_cron_id": job.QLCronID, "name": source.Name})
+	writeJSON(w, http.StatusAccepted, map[string]any{"started": true, "account_id": acc.ID, "script_key": source.Key, "ql_cron_id": job.QLCronID, "name": source.Name, "submitted_at": time.Now().Unix()})
 }
 
 func (a *App) handleQingLongJobLog(w http.ResponseWriter, r *http.Request) {
@@ -224,6 +238,134 @@ func (a *App) handleQingLongJobLog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"script_key": scriptKey, "ql_cron_id": job.QLCronID, "log": logText})
+}
+
+func (a *App) handleQingLongRuns(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	acc, ok := a.resolveAccountFromQuery(w, r)
+	if !ok {
+		return
+	}
+	runs, err := a.accountRunHistory(r.Context(), acc.ID)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"account": acc.Public(), "runs": runs, "count": len(runs)})
+}
+
+func (a *App) handleQingLongRunLog(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	acc, ok := a.resolveAccountFromQuery(w, r)
+	if !ok {
+		return
+	}
+	logKey := strings.TrimSpace(r.URL.Query().Get("log_key"))
+	runs, err := a.accountRunHistory(r.Context(), acc.ID)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	var selected *accountRunPublic
+	for i := range runs {
+		if runs[i].LogKey == logKey {
+			selected = &runs[i]
+			break
+		}
+	}
+	if selected == nil {
+		writeError(w, http.StatusNotFound, "该日志不属于当前账号或已被清理")
+		return
+	}
+	separator := strings.LastIndex(logKey, "/")
+	if separator <= 0 || separator == len(logKey)-1 {
+		writeError(w, http.StatusBadRequest, "日志路径不合法")
+		return
+	}
+	logText, err := a.qinglong.logDetail(r.Context(), logKey[:separator], logKey[separator+1:])
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"account_id": acc.ID, "script_key": selected.ScriptKey, "log_key": logKey, "log": logText})
+}
+
+func (a *App) accountRunHistory(ctx context.Context, accountID int64) ([]accountRunPublic, error) {
+	sources, cronsByID, err := a.scriptCatalog(ctx)
+	if err != nil {
+		return nil, err
+	}
+	jobs, err := a.db.ListAccountScriptJobs(ctx, accountID)
+	if err != nil {
+		return nil, err
+	}
+	logs, err := a.qinglong.listLogs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	sourceByKey := make(map[string]scriptSource, len(sources))
+	for _, source := range sources {
+		sourceByKey[source.Key] = source
+	}
+	logRoots := make(map[string]qingLongLogEntry, len(logs))
+	for _, entry := range logs {
+		logRoots[entry.Key] = entry
+		if entry.Title != "" {
+			logRoots[entry.Title] = entry
+		}
+	}
+	out := make([]accountRunPublic, 0)
+	for _, job := range jobs {
+		cron, exists := cronsByID[job.QLCronID]
+		if !exists {
+			continue
+		}
+		rootKey := strings.Trim(cron.LogName, "/")
+		if rootKey == "" {
+			if separator := strings.Index(cron.LogPath, "/"); separator > 0 {
+				rootKey = cron.LogPath[:separator]
+			}
+		}
+		root, exists := logRoots[rootKey]
+		if !exists {
+			continue
+		}
+		children := append([]qingLongLogEntry(nil), root.Children...)
+		sort.Slice(children, func(i, j int) bool { return children[i].CreateTime > children[j].CreateTime })
+		name := job.ScriptKey
+		if source, found := sourceByKey[job.ScriptKey]; found {
+			name = source.Name
+		}
+		for index, entry := range children {
+			if entry.Type != "file" || !strings.HasSuffix(strings.ToLower(entry.Title), ".log") {
+				continue
+			}
+			logKey := entry.Key
+			if logKey == "" {
+				logKey = strings.TrimRight(root.Key, "/") + "/" + entry.Title
+			}
+			running := cron.running() && index == 0
+			status := "已完成"
+			if running {
+				status = "运行中"
+			}
+			out = append(out, accountRunPublic{
+				AccountID: accountID, ScriptKey: job.ScriptKey, Name: name, QLCronID: cron.ID,
+				LogKey: logKey, StartedAt: entry.CreateTime / 1000, Size: entry.Size, Running: running, TaskStatus: status,
+			})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].StartedAt > out[j].StartedAt })
+	if len(out) > 100 {
+		out = out[:100]
+	}
+	return out, nil
 }
 
 func (a *App) handleQingLongPush(w http.ResponseWriter, r *http.Request) {
@@ -287,6 +429,9 @@ func (a *App) scriptCatalog(ctx context.Context) ([]scriptSource, map[int64]qing
 	byID := make(map[int64]qingLongCron, len(crons))
 	for _, cron := range crons {
 		byID[cron.ID] = cron
+		if strings.HasPrefix(cron.Name, "[YYB:") {
+			continue
+		}
 		if !strings.HasPrefix(cron.Command, prefix) {
 			continue
 		}
@@ -327,15 +472,16 @@ func (a *App) ensureAccountJob(ctx context.Context, acc *store.WechatAccount, sc
 	if err != nil {
 		return nil, scriptSource{}, err
 	}
-	command, err := a.accountTaskCommand(acc.ID, scriptKey, setting)
+	command, taskBefore, err := a.accountTaskSpec(acc.ID, scriptKey, setting)
 	if err != nil {
 		return nil, scriptSource{}, err
 	}
 	name := managedTaskName(acc.ID, source.Name)
+	logName := managedLogName(acc.ID, scriptKey)
 	job, err := a.db.GetAccountScriptJob(ctx, acc.ID, scriptKey)
 	if err == nil {
 		if _, exists := cronsByID[job.QLCronID]; exists {
-			if err := a.qinglong.updateCron(ctx, job.QLCronID, name, command, source.Schedule); err != nil {
+			if err := a.qinglong.updateCron(ctx, job.QLCronID, name, command, source.Schedule, taskBefore, logName); err != nil {
 				return nil, scriptSource{}, err
 			}
 			return job, source, nil
@@ -344,7 +490,7 @@ func (a *App) ensureAccountJob(ctx context.Context, acc *store.WechatAccount, sc
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return nil, scriptSource{}, err
 	}
-	cron, err := a.qinglong.createCron(ctx, name, command, source.Schedule)
+	cron, err := a.qinglong.createCron(ctx, name, command, source.Schedule, taskBefore, logName)
 	if err != nil {
 		return nil, scriptSource{}, err
 	}
@@ -359,15 +505,20 @@ func managedTaskName(accountID int64, sourceName string) string {
 	return fmt.Sprintf("[YYB:%d] %s", accountID, sourceName)
 }
 
-func (a *App) accountTaskCommand(accountID int64, scriptKey string, setting *store.AccountPushSetting) (string, error) {
+func managedLogName(accountID int64, scriptKey string) string {
+	sum := sha256.Sum256([]byte(scriptKey))
+	return fmt.Sprintf("yyb_account_%d_%x", accountID, sum[:6])
+}
+
+func (a *App) accountTaskSpec(accountID int64, scriptKey string, setting *store.AccountPushSetting) (string, string, error) {
 	if !validScriptKey.MatchString(scriptKey) {
-		return "", fmt.Errorf("脚本路径不合法")
+		return "", "", fmt.Errorf("脚本路径不合法")
 	}
 	if !regexp.MustCompile(`^[A-Za-z0-9_.:-]+$`).MatchString(a.cfg.QingLongServer) {
-		return "", fmt.Errorf("YYB_QINGLONG_SERVER 格式不合法")
+		return "", "", fmt.Errorf("YYB_QINGLONG_SERVER 格式不合法")
 	}
 	if !regexp.MustCompile(`^[A-Za-z0-9_.-]+$`).MatchString(a.cfg.QingLongRepo) {
-		return "", fmt.Errorf("YYB_QINGLONG_REPO 格式不合法")
+		return "", "", fmt.Errorf("YYB_QINGLONG_REPO 格式不合法")
 	}
 	pushKey, pushPlusToken, pushPlusTopic, qywxKey := "''", "''", "''", "''"
 	switch setting.Channel {
@@ -381,10 +532,12 @@ func (a *App) accountTaskCommand(accountID int64, scriptKey string, setting *sto
 	case "qywx":
 		qywxKey = envReference(setting.TokenEnvName)
 	}
-	return fmt.Sprintf(
-		"YYB_SERVER='%s@%d' PUSH_KEY=%s PUSH_PLUS_TOKEN=%s PUSH_PLUS_USER=%s QYWX_KEY=%s task %s/%s",
-		a.cfg.QingLongServer, accountID, pushKey, pushPlusToken, pushPlusTopic, qywxKey, a.cfg.QingLongRepo, scriptKey,
-	), nil
+	command := fmt.Sprintf("task %s/%s", a.cfg.QingLongRepo, scriptKey)
+	taskBefore := fmt.Sprintf(
+		"export YYB_SERVER='%s@%d'; export PUSH_KEY=%s; export PUSH_PLUS_TOKEN=%s; export PUSH_PLUS_USER=%s; export QYWX_KEY=%s",
+		a.cfg.QingLongServer, accountID, pushKey, pushPlusToken, pushPlusTopic, qywxKey,
+	)
+	return command, taskBefore, nil
 }
 
 func envReference(name string) string {
@@ -499,11 +652,11 @@ func (a *App) refreshAccountJobCommands(ctx context.Context, acc *store.WechatAc
 		if _, cronExists := cronsByID[job.QLCronID]; !sourceExists || !cronExists {
 			continue
 		}
-		command, err := a.accountTaskCommand(acc.ID, job.ScriptKey, setting)
+		command, taskBefore, err := a.accountTaskSpec(acc.ID, job.ScriptKey, setting)
 		if err != nil {
 			return err
 		}
-		if err := a.qinglong.updateCron(ctx, job.QLCronID, managedTaskName(acc.ID, source.Name), command, source.Schedule); err != nil {
+		if err := a.qinglong.updateCron(ctx, job.QLCronID, managedTaskName(acc.ID, source.Name), command, source.Schedule, taskBefore, managedLogName(acc.ID, job.ScriptKey)); err != nil {
 			return err
 		}
 	}

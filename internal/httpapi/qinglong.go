@@ -33,6 +33,8 @@ type qingLongCron struct {
 	IsDisabled        *int    `json:"isDisabled"`
 	PID               any     `json:"pid"`
 	LogPath           string  `json:"log_path"`
+	LogName           string  `json:"log_name"`
+	TaskBefore        string  `json:"task_before"`
 	LastRunningTime   int64   `json:"last_running_time"`
 	LastExecutionTime int64   `json:"last_execution_time"`
 	CreatedAt         string  `json:"createdAt"`
@@ -61,6 +63,16 @@ type qingLongEnv struct {
 	Status    int    `json:"status"`
 	CreatedAt string `json:"createdAt"`
 	UpdatedAt string `json:"updatedAt"`
+}
+
+type qingLongLogEntry struct {
+	Title      string             `json:"title"`
+	Key        string             `json:"key"`
+	Type       string             `json:"type"`
+	Parent     string             `json:"parent"`
+	Size       int64              `json:"size"`
+	CreateTime int64              `json:"createTime"`
+	Children   []qingLongLogEntry `json:"children"`
 }
 
 type qingLongEnvelope struct {
@@ -222,8 +234,8 @@ func (c *qingLongClient) listCrons(ctx context.Context, search string) ([]qingLo
 	return page.List, nil
 }
 
-func (c *qingLongClient) createCron(ctx context.Context, name, command, schedule string) (*qingLongCron, error) {
-	body := map[string]any{"name": name, "command": command, "schedule": schedule}
+func (c *qingLongClient) createCron(ctx context.Context, name, command, schedule, taskBefore, logName string) (*qingLongCron, error) {
+	body := map[string]any{"name": name, "command": command, "schedule": schedule, "task_before": taskBefore, "log_name": logName}
 	var raw json.RawMessage
 	if err := c.request(ctx, http.MethodPost, "/open/crons", body, &raw); err != nil {
 		return nil, err
@@ -239,8 +251,8 @@ func (c *qingLongClient) createCron(ctx context.Context, name, command, schedule
 	return nil, fmt.Errorf("青龙创建任务后未返回任务 ID")
 }
 
-func (c *qingLongClient) updateCron(ctx context.Context, id int64, name, command, schedule string) error {
-	body := map[string]any{"id": id, "name": name, "command": command, "schedule": schedule}
+func (c *qingLongClient) updateCron(ctx context.Context, id int64, name, command, schedule, taskBefore, logName string) error {
+	body := map[string]any{"id": id, "name": name, "command": command, "schedule": schedule, "task_before": taskBefore, "log_name": logName}
 	return c.request(ctx, http.MethodPut, "/open/crons", body, nil)
 }
 
@@ -259,6 +271,23 @@ func (c *qingLongClient) runCrons(ctx context.Context, ids []int64) error {
 func (c *qingLongClient) cronLog(ctx context.Context, id int64) (string, error) {
 	var log string
 	if err := c.request(ctx, http.MethodGet, fmt.Sprintf("/open/crons/%d/log", id), nil, &log); err != nil {
+		return "", err
+	}
+	return log, nil
+}
+
+func (c *qingLongClient) listLogs(ctx context.Context) ([]qingLongLogEntry, error) {
+	var logs []qingLongLogEntry
+	if err := c.request(ctx, http.MethodGet, "/open/logs", nil, &logs); err != nil {
+		return nil, err
+	}
+	return logs, nil
+}
+
+func (c *qingLongClient) logDetail(ctx context.Context, path, file string) (string, error) {
+	query := url.Values{"path": {path}, "file": {file}}
+	var log string
+	if err := c.request(ctx, http.MethodGet, "/open/logs/detail?"+query.Encode(), nil, &log); err != nil {
 		return "", err
 	}
 	return log, nil

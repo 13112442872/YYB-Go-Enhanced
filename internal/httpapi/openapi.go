@@ -167,6 +167,23 @@ func newOpenAPISpec() map[string]any {
 					defaulted(map[string]any{"200": jsonResponse("最近运行日志。", refSchema("JobLogResponse"))}),
 				),
 			},
+			"/api/qinglong/runs": map[string]any{
+				"get": openAPIOperation(
+					[]string{"qinglong"}, "获取账号的历史运行日志",
+					[]map[string]any{queryStringParam("ref", "账号 ID、UIN 或 openid。", true)}, nil,
+					defaulted(map[string]any{"200": jsonResponse("只包含当前账号专属任务的日志。", refSchema("AccountRunsResponse"))}),
+				),
+			},
+			"/api/qinglong/runs/log": map[string]any{
+				"get": openAPIOperation(
+					[]string{"qinglong"}, "读取账号的一条历史运行日志",
+					[]map[string]any{
+						queryStringParam("ref", "账号 ID、UIN 或 openid。", true),
+						queryStringParam("log_key", "账号运行日志列表返回的日志键。", true),
+					}, nil,
+					defaulted(map[string]any{"200": jsonResponse("日志正文。", refSchema("AccountRunLogResponse"))}),
+				),
+			},
 			"/api/qinglong/push": map[string]any{
 				"get": openAPIOperation(
 					[]string{"qinglong"}, "获取账号推送设置",
@@ -322,6 +339,28 @@ func newOpenAPISpec() map[string]any {
 				"JobLogResponse": objectSchema([]string{"script_key", "ql_cron_id", "log"}, map[string]any{
 					"script_key": map[string]any{"type": "string"},
 					"ql_cron_id": int64Schema(),
+					"log":        map[string]any{"type": "string"},
+				}),
+				"AccountRun": objectSchema([]string{"account_id", "script_key", "name", "ql_cron_id", "log_key", "started_at", "size", "running", "status"}, map[string]any{
+					"account_id": int64Schema(),
+					"script_key": map[string]any{"type": "string"},
+					"name":       map[string]any{"type": "string"},
+					"ql_cron_id": int64Schema(),
+					"log_key":    map[string]any{"type": "string"},
+					"started_at": int64Schema(),
+					"size":       int64Schema(),
+					"running":    map[string]any{"type": "boolean"},
+					"status":     map[string]any{"type": "string", "enum": []string{"运行中", "已完成"}},
+				}),
+				"AccountRunsResponse": objectSchema([]string{"account", "runs", "count"}, map[string]any{
+					"account": refSchema("AccountPublic"),
+					"runs":    arraySchema(refSchema("AccountRun")),
+					"count":   map[string]any{"type": "integer"},
+				}),
+				"AccountRunLogResponse": objectSchema([]string{"account_id", "script_key", "log_key", "log"}, map[string]any{
+					"account_id": int64Schema(),
+					"script_key": map[string]any{"type": "string"},
+					"log_key":    map[string]any{"type": "string"},
 					"log":        map[string]any{"type": "string"},
 				}),
 				"PushSetting": objectSchema([]string{"channel", "token_configured", "topic_configured"}, map[string]any{
