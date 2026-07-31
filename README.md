@@ -7,7 +7,7 @@
 - 微信扫码添加账号，扫码成功后显示账号 ID、OpenID 和存活状态
 - Web 控制台管理账号并复制 OpenID
 - 提供 `getCode`、`getPhoneNumber` 和 `operateWxData` 接口
-- 应用宝短期凭据失效时使用 refresh token 按需续期
+- 应用宝短期凭据接近失效时由后台任务主动续期，业务调用失败时也会按需续期
 - SQLite 持久化账号与协议会话
 - Nginx Basic Auth 保护公开的 Web 入口
 - 支持与青龙容器共享 Docker 网络
@@ -39,6 +39,19 @@ docker compose up -d --build
 ```dotenv
 YYB_BIND_ADDRESS=192.168.1.10
 ```
+
+## 自动保活
+
+服务默认每 30 分钟检查一次账号，并在 access token 剩余不足 45 分钟时，通过 refresh token 更新 access token、refresh token 和 login buffer。该过程不会生成未消费的 `wx.login` code。
+
+可以在 `.env` 中调整：
+
+```dotenv
+YYB_KEEPALIVE_INTERVAL=30m
+YYB_KEEPALIVE_AHEAD=45m
+```
+
+将 `YYB_KEEPALIVE_INTERVAL` 设为 `0` 可关闭后台保活。提前续期遇到临时网络失败时会保留当前账号状态并在后续周期重试；凭据真正过期或 refresh token 被服务端撤销后仍然需要重新扫码。
 
 ## 青龙接入
 

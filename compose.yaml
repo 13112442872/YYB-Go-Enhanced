@@ -13,6 +13,10 @@ services:
       - "8000"
       - -resource-root
       - /app/resource
+      - -keepalive-interval
+      - ${YYB_KEEPALIVE_INTERVAL:-30m}
+      - -keepalive-ahead
+      - ${YYB_KEEPALIVE_AHEAD:-45m}
     volumes:
       - ./data/db:/app/resource/db
       - ./data/avatars:/app/resource/avatars

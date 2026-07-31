@@ -306,6 +306,19 @@ func (db *DB) SetAccountCredential(ctx context.Context, id int64, loginBuffer st
 	return err
 }
 
+func (db *DB) SetAccountCredentialStatus(ctx context.Context, id int64, loginBuffer string, credentials map[string]any, status string) error {
+	credJSON, err := marshalNullable(credentials)
+	if err != nil {
+		return err
+	}
+	now := time.Now().Unix()
+	_, err = db.sql.ExecContext(ctx,
+		"UPDATE wechat_accounts SET login_buffer=?, credentials=?, status=?, last_checked_at=?, updated_at=? WHERE id=?",
+		loginBuffer, credJSON, status, now, now, id,
+	)
+	return err
+}
+
 func (db *DB) SetAccountStatus(ctx context.Context, id int64, status string) error {
 	now := time.Now().Unix()
 	_, err := db.sql.ExecContext(ctx,

@@ -23,25 +23,32 @@ import (
 )
 
 type Config struct {
-	ResourceRoot   string
-	DBFilename     string
-	TCPProxy       string
-	SessionTTL     time.Duration
-	RequestTimeout time.Duration
-	AvatarTimeout  time.Duration
-	ScanTimeout    time.Duration
-	QRSessionTTL   time.Duration
+	ResourceRoot      string
+	DBFilename        string
+	TCPProxy          string
+	SessionTTL        time.Duration
+	RequestTimeout    time.Duration
+	AvatarTimeout     time.Duration
+	ScanTimeout       time.Duration
+	QRSessionTTL      time.Duration
+	KeepAliveInterval time.Duration
+	KeepAliveAhead    time.Duration
 }
 
 type App struct {
-	cfg       Config
-	resources resources
-	db        *store.DB
-	pool      *protocol.Pool
-	qr        *qr.Client
+	cfg                Config
+	resources          resources
+	db                 *store.DB
+	pool               *protocol.Pool
+	qr                 *qr.Client
+	refreshLoginBuffer func(context.Context, protocol.LoginBufferCredentials) (protocol.LoginBufferResult, error)
 
 	mu         sync.Mutex
 	qrSessions map[string]*qr.Session
+	refreshMu  sync.Mutex
+
+	keepAliveCancel context.CancelFunc
+	keepAliveDone   chan struct{}
 }
 
 var swaggerDocsHandler = httpSwagger.Handler(
@@ -70,6 +77,9 @@ func NewApp(cfg Config) (*App, error) {
 	if cfg.QRSessionTTL == 0 {
 		cfg.QRSessionTTL = 5 * time.Minute
 	}
+	if cfg.KeepAliveInterval > 0 && cfg.KeepAliveAhead <= 0 {
+		cfg.KeepAliveAhead = 45 * time.Minute
+	}
 	res, err := ensureResources(cfg.ResourceRoot)
 	if err != nil {
 		return nil, err
@@ -87,17 +97,26 @@ func NewApp(cfg Config) (*App, error) {
 	poolCfg.ShortlinkTimeout = cfg.RequestTimeout
 	poolCfg.TCPProxy = cfg.TCPProxy
 	pool := protocol.NewPool(poolCfg, db)
-	return &App{
-		cfg:        cfg,
-		resources:  res,
-		db:         db,
-		pool:       pool,
-		qr:         qr.NewClient(cfg.RequestTimeout),
-		qrSessions: map[string]*qr.Session{},
-	}, nil
+	qrClient := qr.NewClient(cfg.RequestTimeout)
+	app := &App{
+		cfg:                cfg,
+		resources:          res,
+		db:                 db,
+		pool:               pool,
+		qr:                 qrClient,
+		refreshLoginBuffer: qrClient.RefreshLoginBuffer,
+		qrSessions:         map[string]*qr.Session{},
+	}
+	app.startKeepAlive()
+	return app, nil
 }
 
 func (a *App) Close() error {
+	if a.keepAliveCancel != nil {
+		a.keepAliveCancel()
+		<-a.keepAliveDone
+		a.keepAliveCancel = nil
+	}
 	if a.db != nil {
 		return a.db.Close()
 	}
@@ -561,25 +580,6 @@ func (a *App) storeFromScan(ctx context.Context, loginBuffer string, creds proto
 	avatar := a.resolveAvatar(ctx, openid, userInfo)
 	status := "alive"
 	return a.db.UpsertAccount(ctx, openid, loginBuffer, stringPtrMaybe(nick), stringPtrMaybe(nick), stringPtrMaybe(avatar), userInfo, creds.ToMap(), &status)
-}
-
-func (a *App) refreshLiveness(ctx context.Context, acc *store.WechatAccount) string {
-	if acc.Credentials == nil {
-		_ = a.db.SetAccountStatus(ctx, acc.ID, "unknown")
-		return "unknown"
-	}
-	creds := protocol.CredentialsFromMap(acc.Credentials)
-	result, err := a.qr.RefreshLoginBuffer(ctx, creds)
-	if err != nil {
-		_ = a.db.SetAccountStatus(ctx, acc.ID, "expired")
-		return "expired"
-	}
-	_ = a.db.SetAccountCredential(ctx, acc.ID, result.LoginBuffer, result.Credentials.ToMap())
-	_ = a.db.SetAccountStatus(ctx, acc.ID, "alive")
-	if avatar := a.resolveAvatar(ctx, acc.OpenID, acc.UserInfo); avatar != "" {
-		_ = a.db.SetAccountProfile(ctx, acc.ID, acc.Nickname, &avatar, acc.UserInfo)
-	}
-	return "alive"
 }
 
 func (a *App) resyncProfile(ctx context.Context, acc *store.WechatAccount) (*store.WechatAccount, error) {

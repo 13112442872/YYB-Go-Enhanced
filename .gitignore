@@ -8,4 +8,4 @@ nginx.htpasswd
 *.sqlite
 *.sqlite3
 *.log
-yyb-go
+/yyb-go
