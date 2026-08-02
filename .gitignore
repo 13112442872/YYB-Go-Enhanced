@@ -8,4 +8,6 @@ nginx.htpasswd
 *.sqlite
 *.sqlite3
 *.log
+__pycache__/
+*.py[cod]
 /yyb-go
