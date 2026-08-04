@@ -15,15 +15,17 @@ import (
 )
 
 type fakeQingLong struct {
-	mu          sync.Mutex
-	crons       []qingLongCron
-	envs        []qingLongEnv
-	nextCron    int64
-	nextEnv     int64
-	runIDs      []int64
-	commands    []string
-	taskBefores []string
-	logs        []qingLongLogEntry
+	mu              sync.Mutex
+	crons           []qingLongCron
+	envs            []qingLongEnv
+	nextCron        int64
+	nextEnv         int64
+	runIDs          []int64
+	deletedIDs      []int64
+	commands        []string
+	taskBefores     []string
+	logs            []qingLongLogEntry
+	failDeleteCrons bool
 }
 
 func intPointer(value int) *int { return &value }
@@ -116,6 +118,30 @@ func (f *fakeQingLong) serveHTTP(w http.ResponseWriter, r *http.Request) {
 				f.logs = append(f.logs, qingLongLogEntry{Title: f.crons[i].LogName, Key: f.crons[i].LogName, Type: "directory", Children: []qingLongLogEntry{{Title: filename, Key: key, Parent: f.crons[i].LogName, Type: "file", Size: 88, CreateTime: 1785480000000}}})
 			}
 		}
+		write(nil)
+	case r.Method == http.MethodDelete && r.URL.Path == "/open/crons":
+		if f.failDeleteCrons {
+			w.WriteHeader(http.StatusBadGateway)
+			write(nil)
+			return
+		}
+		var ids []int64
+		_ = json.NewDecoder(r.Body).Decode(&ids)
+		f.deletedIDs = append(f.deletedIDs, ids...)
+		kept := f.crons[:0]
+		for _, cron := range f.crons {
+			deleted := false
+			for _, id := range ids {
+				if cron.ID == id {
+					deleted = true
+					break
+				}
+			}
+			if !deleted {
+				kept = append(kept, cron)
+			}
+		}
+		f.crons = kept
 		write(nil)
 	case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/log"):
 		write("fake account log")

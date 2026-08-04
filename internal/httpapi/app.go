@@ -365,11 +365,20 @@ func (a *App) handleAccountsRoot(w http.ResponseWriter, r *http.Request) {
 		if !ok {
 			return
 		}
+		cleanup, err := a.cleanupAccountFromQingLong(r.Context(), acc)
+		if err != nil {
+			writeError(w, http.StatusBadGateway, "青龙关联数据清理失败，本地账号未删除："+err.Error())
+			return
+		}
 		if err := a.db.DeleteAccount(r.Context(), acc.ID); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"deleted": acc.ID, "openid": acc.OpenID})
+		writeJSON(w, http.StatusOK, map[string]any{
+			"deleted": acc.ID, "openid": acc.OpenID,
+			"qinglong_cleanup": cleanup.Status, "env_entries_removed": cleanup.EnvEntriesRemoved,
+			"tasks_deleted": cleanup.TasksDeleted,
+		})
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}

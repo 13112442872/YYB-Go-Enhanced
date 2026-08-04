@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"database/sql"
 	"net/http"
 	"strings"
 	"testing"
@@ -31,6 +32,107 @@ func TestMergeYYBServerValueIsIdempotent(t *testing.T) {
 				t.Fatalf("mergeYYBServerValue() = %q, %v; want %q, %v", got, added, test.want, test.added)
 			}
 		})
+	}
+}
+
+func TestRemoveAccountFromYYBServer(t *testing.T) {
+	acc := &store.WechatAccount{ID: 3, OpenID: "openid-3"}
+	tests := []struct {
+		name     string
+		existing string
+		want     string
+		removed  int
+	}{
+		{name: "removes id", existing: "yyb-go:8000@3\nyyb-go:8000@4", want: "yyb-go:8000@4", removed: 1},
+		{name: "removes openid", existing: "host@openid-3\nmanual", want: "manual", removed: 1},
+		{name: "removes duplicate references", existing: "host@3\nhost@openid-3\nhost@4", want: "host@4", removed: 2},
+		{name: "preserves unrelated and malformed", existing: "manual-content\nhost@13\nhost@4", want: "manual-content\nhost@13\nhost@4"},
+		{name: "normalizes windows lines", existing: "host@3\r\nmanual\r\n", want: "manual", removed: 1},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, removed := removeAccountFromYYBServer(test.existing, acc)
+			if got != test.want || removed != test.removed {
+				t.Fatalf("removeAccountFromYYBServer() = %q, %d; want %q, %d", got, removed, test.want, test.removed)
+			}
+		})
+	}
+}
+
+func TestDeleteAccountCleansQingLongLinks(t *testing.T) {
+	fake, server := newFakeQingLong(t)
+	app, handler, ref := newRunsTestApp(t, server.URL)
+	acc, err := app.db.ResolveAccount(context.Background(), ref)
+	if err != nil {
+		t.Fatalf("resolve account: %v", err)
+	}
+	fake.mu.Lock()
+	fake.envs = append(fake.envs, qingLongEnv{
+		ID: 41, Name: "YYB_SERVER", Value: "manual-line\nyyb-go:8000@" + ref + "\nyyb-go:8000@test-openid\nyyb-go:8000@8",
+		Remarks: "keep-this-remark", Status: 1,
+	})
+	fake.crons = append(fake.crons, qingLongCron{ID: 77, Name: "[YYB:" + ref + "] managed"})
+	fake.mu.Unlock()
+	if _, err := app.db.UpsertAccountScriptJob(context.Background(), acc.ID, "MDHY.js", 77, "11 8 * * *"); err != nil {
+		t.Fatalf("seed managed job: %v", err)
+	}
+
+	response := apiRequest(t, handler, http.MethodDelete, "/accounts?ref="+ref, nil)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"qinglong_cleanup":"completed"`) || !strings.Contains(response.Body.String(), `"env_entries_removed":2`) || !strings.Contains(response.Body.String(), `"tasks_deleted":1`) {
+		t.Fatalf("delete response = %d %s", response.Code, response.Body.String())
+	}
+	if _, err := app.db.ResolveAccount(context.Background(), ref); err != sql.ErrNoRows {
+		t.Fatalf("deleted account lookup error = %v, want sql.ErrNoRows", err)
+	}
+
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if len(fake.deletedIDs) != 1 || fake.deletedIDs[0] != 77 {
+		t.Fatalf("deleted cron IDs = %v", fake.deletedIDs)
+	}
+	for _, cron := range fake.crons {
+		if cron.ID == 77 {
+			t.Fatal("managed cron was not deleted")
+		}
+	}
+	var value, remarks string
+	var status int
+	for _, env := range fake.envs {
+		if env.Name == "YYB_SERVER" {
+			value, remarks, status = env.Value, env.Remarks, env.Status
+		}
+	}
+	if value != "manual-line\nyyb-go:8000@8" || remarks != "keep-this-remark" || status != 1 {
+		t.Fatalf("YYB_SERVER after delete = %q, remarks=%q, status=%d", value, remarks, status)
+	}
+}
+
+func TestDeleteAccountKeepsLocalDataWhenQingLongCleanupFails(t *testing.T) {
+	fake, server := newFakeQingLong(t)
+	app, handler, ref := newRunsTestApp(t, server.URL)
+	acc, err := app.db.ResolveAccount(context.Background(), ref)
+	if err != nil {
+		t.Fatalf("resolve account: %v", err)
+	}
+	fake.mu.Lock()
+	fake.envs = append(fake.envs, qingLongEnv{ID: 41, Name: "YYB_SERVER", Value: "manual\nyyb-go:8000@" + ref, Remarks: "keep"})
+	fake.failDeleteCrons = true
+	fake.mu.Unlock()
+	if _, err := app.db.UpsertAccountScriptJob(context.Background(), acc.ID, "MDHY.js", 77, "11 8 * * *"); err != nil {
+		t.Fatalf("seed managed job: %v", err)
+	}
+
+	response := apiRequest(t, handler, http.MethodDelete, "/accounts?ref="+ref, nil)
+	if response.Code != http.StatusBadGateway {
+		t.Fatalf("delete response = %d %s", response.Code, response.Body.String())
+	}
+	if _, err := app.db.ResolveAccount(context.Background(), ref); err != nil {
+		t.Fatalf("local account was deleted after QingLong failure: %v", err)
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if fake.envs[len(fake.envs)-1].Value != "manual\nyyb-go:8000@"+ref {
+		t.Fatalf("YYB_SERVER rollback failed: %q", fake.envs[len(fake.envs)-1].Value)
 	}
 }
 

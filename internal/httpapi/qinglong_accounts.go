@@ -33,6 +33,17 @@ type qingLongSyncIn struct {
 	Ref string `json:"ref"`
 }
 
+type qingLongAccountCleanup struct {
+	Status            string
+	EnvEntriesRemoved int
+	TasksDeleted      int
+}
+
+type qingLongEnvChange struct {
+	env      qingLongEnv
+	newValue string
+}
+
 func (a *App) handleAccountRemark(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPut {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -225,4 +236,93 @@ func mergeYYBServerValue(existing, server string, acc *store.WechatAccount) (str
 		return entry, true
 	}
 	return existing + "\n" + entry, true
+}
+
+func removeAccountFromYYBServer(existing string, acc *store.WechatAccount) (string, int) {
+	normalized := strings.ReplaceAll(existing, "\r\n", "\n")
+	normalized = strings.TrimRight(normalized, "\n")
+	if normalized == "" {
+		return "", 0
+	}
+
+	id := strconv.FormatInt(acc.ID, 10)
+	kept := make([]string, 0, strings.Count(normalized, "\n")+1)
+	removed := 0
+	for _, line := range strings.Split(normalized, "\n") {
+		trimmed := strings.TrimSpace(line)
+		separator := strings.LastIndex(trimmed, "@")
+		if separator >= 0 {
+			ref := strings.TrimSpace(trimmed[separator+1:])
+			if ref == id || (acc.OpenID != "" && ref == acc.OpenID) {
+				removed++
+				continue
+			}
+		}
+		kept = append(kept, line)
+	}
+	return strings.Join(kept, "\n"), removed
+}
+
+func (a *App) cleanupAccountFromQingLong(ctx context.Context, acc *store.WechatAccount) (qingLongAccountCleanup, error) {
+	result := qingLongAccountCleanup{Status: "skipped"}
+	if !a.qinglong.configured() {
+		return result, nil
+	}
+
+	jobs, err := a.db.ListAccountScriptJobs(ctx, acc.ID)
+	if err != nil {
+		return result, err
+	}
+	envs, err := a.qinglong.listEnvs(ctx, "YYB_SERVER")
+	if err != nil {
+		return result, err
+	}
+
+	changes := make([]qingLongEnvChange, 0)
+	for _, env := range envs {
+		if env.Name != "YYB_SERVER" {
+			continue
+		}
+		value, removed := removeAccountFromYYBServer(env.Value, acc)
+		if removed == 0 {
+			continue
+		}
+		changes = append(changes, qingLongEnvChange{env: env, newValue: value})
+		result.EnvEntriesRemoved += removed
+	}
+
+	updated := make([]qingLongEnv, 0, len(changes))
+	rollbackEnvs := func() {
+		for i := len(updated) - 1; i >= 0; i-- {
+			_ = a.qinglong.updateEnv(ctx, updated[i], updated[i].Value)
+		}
+	}
+	for _, change := range changes {
+		if err := a.qinglong.updateEnv(ctx, change.env, change.newValue); err != nil {
+			rollbackEnvs()
+			return result, err
+		}
+		updated = append(updated, change.env)
+	}
+
+	cronIDs := make([]int64, 0, len(jobs))
+	seenCronIDs := make(map[int64]struct{}, len(jobs))
+	for _, job := range jobs {
+		if job.QLCronID <= 0 {
+			continue
+		}
+		if _, exists := seenCronIDs[job.QLCronID]; exists {
+			continue
+		}
+		seenCronIDs[job.QLCronID] = struct{}{}
+		cronIDs = append(cronIDs, job.QLCronID)
+	}
+	if err := a.qinglong.deleteCrons(ctx, cronIDs); err != nil {
+		rollbackEnvs()
+		return result, err
+	}
+
+	result.Status = "completed"
+	result.TasksDeleted = len(cronIDs)
+	return result, nil
 }

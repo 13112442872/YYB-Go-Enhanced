@@ -299,6 +299,13 @@ func (c *qingLongClient) runCrons(ctx context.Context, ids []int64) error {
 	return c.request(ctx, http.MethodPut, "/open/crons/run", ids, nil)
 }
 
+func (c *qingLongClient) deleteCrons(ctx context.Context, ids []int64) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	return c.request(ctx, http.MethodDelete, "/open/crons", ids, nil)
+}
+
 func (c *qingLongClient) cronLog(ctx context.Context, id int64) (string, error) {
 	var log string
 	if err := c.request(ctx, http.MethodGet, fmt.Sprintf("/open/crons/%d/log", id), nil, &log); err != nil {
@@ -367,6 +374,11 @@ func (c *qingLongClient) upsertEnv(ctx context.Context, name, value, remarks str
 	}
 	body := []map[string]any{{"name": name, "value": value, "remarks": remarks}}
 	return c.request(ctx, http.MethodPost, "/open/envs", body, nil)
+}
+
+func (c *qingLongClient) updateEnv(ctx context.Context, env qingLongEnv, value string) error {
+	body := map[string]any{"id": env.ID, "name": env.Name, "value": value, "remarks": env.Remarks}
+	return c.request(ctx, http.MethodPut, "/open/envs", body, nil)
 }
 
 func (c *qingLongClient) setNamedEnvsEnabled(ctx context.Context, names []string, enabled bool) error {

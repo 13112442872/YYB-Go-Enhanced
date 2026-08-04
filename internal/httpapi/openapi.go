@@ -303,9 +303,12 @@ func newOpenAPISpec() map[string]any {
 					"nickname": nullableStringSchema("账号昵称。"),
 					"status":   map[string]any{"type": "string", "example": "alive"},
 				}),
-				"DeleteAccountResponse": objectSchema([]string{"deleted", "openid"}, map[string]any{
-					"deleted": int64Schema(),
-					"openid":  map[string]any{"type": "string"},
+				"DeleteAccountResponse": objectSchema([]string{"deleted", "openid", "qinglong_cleanup", "env_entries_removed", "tasks_deleted"}, map[string]any{
+					"deleted":             int64Schema(),
+					"openid":              map[string]any{"type": "string"},
+					"qinglong_cleanup":    map[string]any{"type": "string", "enum": []string{"completed", "skipped"}},
+					"env_entries_removed": map[string]any{"type": "integer"},
+					"tasks_deleted":       map[string]any{"type": "integer"},
 				}),
 				"AccountRefRequest": objectSchema(nil, map[string]any{
 					"ref": map[string]any{"type": "string", "description": "账号 ID、UIN 或 openid。支持批量操作的接口不传时表示全部账号。"},
