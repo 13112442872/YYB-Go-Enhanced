@@ -5,6 +5,8 @@
 ## 功能
 
 - 微信扫码添加账号，扫码成功后显示账号 ID、OpenID 和存活状态
+- 扫码成功后可填写账号备注，并一键合并到青龙 `YYB_SERVER`，重复操作不会产生重复账号
+- Web 控制台可选配置青龙 OpenAPI，保存前自动测试连接且不会回传 Client Secret 明文
 - Web 控制台管理账号并复制 OpenID
 - 提供 `getCode`、`getPhoneNumber` 和 `operateWxData` 接口
 - 应用宝短期凭据接近失效时由后台任务主动续期，业务调用失败时也会按需续期
@@ -13,6 +15,15 @@
 - 支持与青龙容器共享 Docker 网络
 - 账号运行管理：每个微信账号独立创建、启停和运行青龙脚本，并查看日志
 - 账号独立推送：支持 Server酱、PushPlus 和企业微信机器人，密钥只保存在青龙环境变量
+
+## 界面
+
+![账号控制台与青龙连接设置](docs/images/account-console.png)
+
+<p align="center">
+  <img src="docs/images/scan-sync-mobile.png" alt="扫码成功后一键添加到青龙" width="360">
+  <img src="docs/images/account-runs-mobile.png" alt="带账号备注的运行日志" width="360">
+</p>
 
 ## Docker Compose 部署
 
@@ -56,6 +67,10 @@ YYB_KEEPALIVE_AHEAD=45m
 将 `YYB_KEEPALIVE_INTERVAL` 设为 `0` 可关闭后台保活。提前续期遇到临时网络失败时会保留当前账号状态并在后续周期重试；凭据真正过期或 refresh token 被服务端撤销后仍然需要重新扫码。
 
 ## 青龙接入
+
+可在 Web 控制台的“青龙连接设置”中填写地址、Client ID 和 Client Secret。配置会持久化到 YYB Go 的 SQLite 数据库并优先于容器环境变量；Client Secret 只用于服务端连接，读取配置时不会返回明文。
+
+扫码成功页和账号控制台都提供“添加/同步到青龙”按钮。同步会保留 `YYB_SERVER` 中已有的多行内容和环境变量备注，只追加缺少的账号，并同时识别账号 ID 与 OpenID，避免重复添加。
 
 当青龙和本服务都连接到 `qinglong_default` 网络后，青龙环境变量可以填写：
 

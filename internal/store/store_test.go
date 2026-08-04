@@ -86,4 +86,30 @@ VALUES(7, 1, 12345, '', '{"ready":true}', ?, 20, 20);
 	if ready, ok := session.SessionBlob["ready"].(bool); !ok || !ready {
 		t.Fatalf("session blob = %#v", session.SessionBlob)
 	}
+
+	if err := db.SetAccountRemark(ctx, 1, " Boom "); err != nil {
+		t.Fatalf("SetAccountRemark() error = %v", err)
+	}
+	account, err := db.GetAccount(ctx, 1)
+	if err != nil {
+		t.Fatalf("GetAccount() after remark error = %v", err)
+	}
+	if account.Remark == nil || *account.Remark != "Boom" {
+		t.Fatalf("remark = %#v, want Boom", account.Remark)
+	}
+	if err := db.SetAccountRemark(ctx, 1, " "); err != nil {
+		t.Fatalf("clear account remark: %v", err)
+	}
+	account, err = db.GetAccount(ctx, 1)
+	if err != nil || account.Remark != nil {
+		t.Fatalf("cleared remark account = %#v, err = %v", account, err)
+	}
+
+	if err := db.SetSetting(ctx, "qinglong_url", "http://qinglong:5700"); err != nil {
+		t.Fatalf("SetSetting() error = %v", err)
+	}
+	setting, err := db.GetSetting(ctx, "qinglong_url")
+	if err != nil || setting != "http://qinglong:5700" {
+		t.Fatalf("GetSetting() = %q, %v", setting, err)
+	}
 }

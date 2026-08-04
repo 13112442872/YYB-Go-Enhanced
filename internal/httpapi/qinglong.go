@@ -95,15 +95,45 @@ func newQingLongClient(baseURL, clientID, clientSecret string, timeout time.Dura
 }
 
 func (c *qingLongClient) configured() bool {
-	return c != nil && c.baseURL != "" && c.clientID != "" && c.clientSecret != ""
-}
-
-func (c *qingLongClient) authenticate(ctx context.Context) (string, error) {
-	if !c.configured() {
-		return "", fmt.Errorf("青龙 OpenAPI 未配置")
+	if c == nil {
+		return false
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	return c.baseURL != "" && c.clientID != "" && c.clientSecret != ""
+}
+
+func (c *qingLongClient) configuration() (string, string, string) {
+	if c == nil {
+		return "", "", ""
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.baseURL, c.clientID, c.clientSecret
+}
+
+func (c *qingLongClient) reconfigure(baseURL, clientID, clientSecret string) {
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	clientID = strings.TrimSpace(clientID)
+	clientSecret = strings.TrimSpace(clientSecret)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.baseURL == baseURL && c.clientID == clientID && c.clientSecret == clientSecret {
+		return
+	}
+	c.baseURL = baseURL
+	c.clientID = clientID
+	c.clientSecret = clientSecret
+	c.token = ""
+	c.tokenExpiry = time.Time{}
+}
+
+func (c *qingLongClient) authenticate(ctx context.Context) (string, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.baseURL == "" || c.clientID == "" || c.clientSecret == "" {
+		return "", fmt.Errorf("青龙 OpenAPI 未配置")
+	}
 	if c.token != "" && time.Now().Before(c.tokenExpiry) {
 		return c.token, nil
 	}
@@ -162,7 +192,8 @@ func (c *qingLongClient) request(ctx context.Context, method, path string, body 
 		}
 		reader = bytes.NewReader(encoded)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, reader)
+	baseURL, _, _ := c.configuration()
+	req, err := http.NewRequestWithContext(ctx, method, baseURL+path, reader)
 	if err != nil {
 		return err
 	}

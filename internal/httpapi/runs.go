@@ -476,7 +476,7 @@ func (a *App) ensureAccountJob(ctx context.Context, acc *store.WechatAccount, sc
 	if err != nil {
 		return nil, scriptSource{}, err
 	}
-	name := managedTaskName(acc.ID, source.Name)
+	name := managedTaskName(acc, source.Name)
 	logName := managedLogName(acc.ID, scriptKey)
 	job, err := a.db.GetAccountScriptJob(ctx, acc.ID, scriptKey)
 	if err == nil {
@@ -501,8 +501,12 @@ func (a *App) ensureAccountJob(ctx context.Context, acc *store.WechatAccount, sc
 	return job, source, err
 }
 
-func managedTaskName(accountID int64, sourceName string) string {
-	return fmt.Sprintf("[YYB:%d] %s", accountID, sourceName)
+func managedTaskName(acc *store.WechatAccount, sourceName string) string {
+	prefix := fmt.Sprintf("[YYB:%d]", acc.ID)
+	if acc.Remark != nil && strings.TrimSpace(*acc.Remark) != "" {
+		return fmt.Sprintf("%s %s · %s", prefix, strings.TrimSpace(*acc.Remark), sourceName)
+	}
+	return prefix + " " + sourceName
 }
 
 func managedLogName(accountID int64, scriptKey string) string {
@@ -656,7 +660,7 @@ func (a *App) refreshAccountJobCommands(ctx context.Context, acc *store.WechatAc
 		if err != nil {
 			return err
 		}
-		if err := a.qinglong.updateCron(ctx, job.QLCronID, managedTaskName(acc.ID, source.Name), command, source.Schedule, taskBefore, managedLogName(acc.ID, job.ScriptKey)); err != nil {
+		if err := a.qinglong.updateCron(ctx, job.QLCronID, managedTaskName(acc, source.Name), command, source.Schedule, taskBefore, managedLogName(acc.ID, job.ScriptKey)); err != nil {
 			return err
 		}
 	}

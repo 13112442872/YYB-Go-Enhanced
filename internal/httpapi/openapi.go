@@ -130,10 +130,35 @@ func newOpenAPISpec() map[string]any {
 					}),
 				),
 			},
+			"/accounts/remark": map[string]any{
+				"put": openAPIOperation(
+					[]string{"accounts"}, "保存账号备注", nil,
+					jsonRequestBody(refSchema("AccountRemarkRequest")),
+					defaulted(map[string]any{"200": jsonResponse("备注保存结果。", freeFormObjectSchema("账号及青龙任务名称更新状态。"))}),
+				),
+			},
 			"/api/qinglong/status": map[string]any{
 				"get": openAPIOperation(
 					[]string{"qinglong"}, "检查青龙连接状态", nil, nil,
 					defaulted(map[string]any{"200": jsonResponse("青龙配置和连接状态。", refSchema("QingLongStatus"))}),
+				),
+			},
+			"/api/qinglong/config": map[string]any{
+				"get": openAPIOperation(
+					[]string{"qinglong"}, "读取青龙连接配置", nil, nil,
+					defaulted(map[string]any{"200": jsonResponse("不包含 Client Secret 明文。", refSchema("QingLongConfig"))}),
+				),
+				"put": openAPIOperation(
+					[]string{"qinglong"}, "测试并保存青龙连接配置", nil,
+					jsonRequestBody(refSchema("QingLongConfigRequest")),
+					defaulted(map[string]any{"200": jsonResponse("连接测试及保存结果。", refSchema("QingLongConfig"))}),
+				),
+			},
+			"/api/qinglong/sync": map[string]any{
+				"post": openAPIOperation(
+					[]string{"qinglong"}, "将账号加入青龙 YYB_SERVER", nil,
+					jsonRequestBody(refSchema("AccountRefRequest")),
+					defaulted(map[string]any{"200": jsonResponse("幂等同步结果。", refSchema("QingLongSyncResponse"))}),
 				),
 			},
 			"/api/qinglong/jobs": map[string]any{
@@ -264,6 +289,7 @@ func newOpenAPISpec() map[string]any {
 					"uin":             nullableInt64Schema(),
 					"alias":           nullableStringSchema("账号别名。"),
 					"nickname":        nullableStringSchema("账号昵称。"),
+					"remark":          nullableStringSchema("用户设置的账号备注。"),
 					"avatar":          nullableStringSchema("本地头像路径或远程头像 URL。"),
 					"status":          nullableStringSchema("账号状态。"),
 					"last_checked_at": nullableInt64Schema(),
@@ -283,6 +309,10 @@ func newOpenAPISpec() map[string]any {
 				}),
 				"AccountRefRequest": objectSchema(nil, map[string]any{
 					"ref": map[string]any{"type": "string", "description": "账号 ID、UIN 或 openid。支持批量操作的接口不传时表示全部账号。"},
+				}),
+				"AccountRemarkRequest": objectSchema([]string{"ref", "remark"}, map[string]any{
+					"ref":    map[string]any{"type": "string"},
+					"remark": map[string]any{"type": "string", "maxLength": 80},
 				}),
 				"RefreshResponse": oneOfSchema(
 					refSchema("RefreshResult"),
@@ -309,6 +339,25 @@ func newOpenAPISpec() map[string]any {
 					"configured": map[string]any{"type": "boolean"},
 					"connected":  map[string]any{"type": "boolean"},
 					"error":      nullableStringSchema("连接失败时的错误摘要。"),
+				}),
+				"QingLongConfig": objectSchema([]string{"url", "client_id", "secret_configured", "configured"}, map[string]any{
+					"url":               map[string]any{"type": "string"},
+					"client_id":         map[string]any{"type": "string"},
+					"secret_configured": map[string]any{"type": "boolean"},
+					"configured":        map[string]any{"type": "boolean"},
+					"connected":         map[string]any{"type": "boolean"},
+				}),
+				"QingLongConfigRequest": objectSchema(nil, map[string]any{
+					"url":           map[string]any{"type": "string", "example": "http://qinglong:5700"},
+					"client_id":     map[string]any{"type": "string"},
+					"client_secret": map[string]any{"type": "string", "writeOnly": true, "description": "留空表示保留已保存的密钥。"},
+					"clear":         map[string]any{"type": "boolean", "description": "设为 true 时清除连接配置。"},
+				}),
+				"QingLongSyncResponse": objectSchema([]string{"account", "name", "value", "added"}, map[string]any{
+					"account": refSchema("AccountPublic"),
+					"name":    map[string]any{"type": "string", "example": "YYB_SERVER"},
+					"value":   map[string]any{"type": "string"},
+					"added":   map[string]any{"type": "boolean"},
 				}),
 				"AccountJob": objectSchema([]string{"script_key", "name", "schedule", "provisioned", "enabled", "running"}, map[string]any{
 					"script_key":         map[string]any{"type": "string"},

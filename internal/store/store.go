@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -21,6 +22,7 @@ CREATE TABLE IF NOT EXISTS wechat_accounts (
     uin             INTEGER,
     alias           TEXT,
     nickname        TEXT,
+    remark          TEXT,
     avatar          TEXT,
     user_info       TEXT,
     login_buffer    TEXT    NOT NULL,
@@ -72,6 +74,12 @@ CREATE TABLE IF NOT EXISTS account_push_settings (
     created_at     INTEGER NOT NULL,
     updated_at     INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS app_settings (
+    key        TEXT PRIMARY KEY,
+    value      TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+);
 `
 
 var defaultFeatures = []Feature{
@@ -90,6 +98,7 @@ type WechatAccount struct {
 	UIN           *int64         `json:"uin,omitempty"`
 	Alias         *string        `json:"alias,omitempty"`
 	Nickname      *string        `json:"nickname,omitempty"`
+	Remark        *string        `json:"remark,omitempty"`
 	Avatar        *string        `json:"avatar,omitempty"`
 	UserInfo      map[string]any `json:"user_info,omitempty"`
 	LoginBuffer   string         `json:"login_buffer,omitempty"`
@@ -106,6 +115,7 @@ type AccountPublic struct {
 	UIN           *int64  `json:"uin"`
 	Alias         *string `json:"alias"`
 	Nickname      *string `json:"nickname"`
+	Remark        *string `json:"remark"`
 	Avatar        *string `json:"avatar"`
 	Status        *string `json:"status"`
 	LastCheckedAt *int64  `json:"last_checked_at"`
@@ -159,6 +169,10 @@ func Open(path string) (*DB, error) {
 		return nil, err
 	}
 	if _, err = db.ExecContext(ctx, schema); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	if err = migrateAccountRemark(ctx, db); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
@@ -224,6 +238,30 @@ func sqliteTableExists(ctx context.Context, db *sql.DB, name string) (bool, erro
 	var n int
 	err := db.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?", name).Scan(&n)
 	return n > 0, err
+}
+
+func migrateAccountRemark(ctx context.Context, db *sql.DB) error {
+	rows, err := db.QueryContext(ctx, "PRAGMA table_info(wechat_accounts)")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid, notNull, primaryKey int
+		var name, columnType string
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			return err
+		}
+		if name == "remark" {
+			return nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	_, err = db.ExecContext(ctx, "ALTER TABLE wechat_accounts ADD COLUMN remark TEXT")
+	return err
 }
 
 func (db *DB) UpsertAccount(ctx context.Context, openid, loginBuffer string, alias, nickname, avatar *string, userInfo map[string]any, credentials map[string]any, status *string) (*WechatAccount, error) {
@@ -312,6 +350,29 @@ func (db *DB) SetAccountProfile(ctx context.Context, id int64, nickname, avatar 
 		"UPDATE wechat_accounts SET nickname=?, avatar=?, user_info=?, updated_at=? WHERE id=?",
 		nullableString(nickname), nullableString(avatar), userJSON, time.Now().Unix(), id,
 	)
+	return err
+}
+
+func (db *DB) SetAccountRemark(ctx context.Context, id int64, remark string) error {
+	remark = strings.TrimSpace(remark)
+	var value any
+	if remark != "" {
+		value = remark
+	}
+	_, err := db.sql.ExecContext(ctx, "UPDATE wechat_accounts SET remark=?, updated_at=? WHERE id=?", value, time.Now().Unix(), id)
+	return err
+}
+
+func (db *DB) GetSetting(ctx context.Context, key string) (string, error) {
+	var value string
+	err := db.sql.QueryRowContext(ctx, "SELECT value FROM app_settings WHERE key=?", key).Scan(&value)
+	return value, err
+}
+
+func (db *DB) SetSetting(ctx context.Context, key, value string) error {
+	_, err := db.sql.ExecContext(ctx, `
+INSERT INTO app_settings(key, value, updated_at) VALUES(?,?,?)
+ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`, key, value, time.Now().Unix())
 	return err
 }
 
@@ -457,6 +518,7 @@ func (a *WechatAccount) Public() AccountPublic {
 		UIN:           a.UIN,
 		Alias:         a.Alias,
 		Nickname:      a.Nickname,
+		Remark:        a.Remark,
 		Avatar:        a.Avatar,
 		Status:        a.Status,
 		LastCheckedAt: a.LastCheckedAt,
@@ -465,7 +527,7 @@ func (a *WechatAccount) Public() AccountPublic {
 	}
 }
 
-const selectAccountSQL = `SELECT id, openid, uin, alias, nickname, avatar, user_info, login_buffer, credentials, status, last_checked_at, created_at, updated_at FROM wechat_accounts`
+const selectAccountSQL = `SELECT id, openid, uin, alias, nickname, remark, avatar, user_info, login_buffer, credentials, status, last_checked_at, created_at, updated_at FROM wechat_accounts`
 
 type accountScanner interface {
 	Scan(dest ...any) error
@@ -481,14 +543,14 @@ func (db *DB) scanAccount(row accountScanner) (*WechatAccount, error) {
 
 func scanAccountRows(row accountScanner) (*WechatAccount, error) {
 	var (
-		a                       WechatAccount
-		uin, lastChecked        sql.NullInt64
-		alias, nickname, avatar sql.NullString
-		userJSON, credJSON      sql.NullString
-		status                  sql.NullString
+		a                               WechatAccount
+		uin, lastChecked                sql.NullInt64
+		alias, nickname, remark, avatar sql.NullString
+		userJSON, credJSON              sql.NullString
+		status                          sql.NullString
 	)
 	err := row.Scan(
-		&a.ID, &a.OpenID, &uin, &alias, &nickname, &avatar, &userJSON,
+		&a.ID, &a.OpenID, &uin, &alias, &nickname, &remark, &avatar, &userJSON,
 		&a.LoginBuffer, &credJSON, &status, &lastChecked, &a.CreatedAt, &a.UpdatedAt,
 	)
 	if err != nil {
@@ -499,6 +561,7 @@ func scanAccountRows(row accountScanner) (*WechatAccount, error) {
 	}
 	a.Alias = stringPtrFromNull(alias)
 	a.Nickname = stringPtrFromNull(nickname)
+	a.Remark = stringPtrFromNull(remark)
 	a.Avatar = stringPtrFromNull(avatar)
 	a.Status = stringPtrFromNull(status)
 	if lastChecked.Valid {
