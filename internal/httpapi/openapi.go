@@ -14,6 +14,7 @@ func newOpenAPISpec() map[string]any {
 		"tags": []map[string]any{
 			{"name": "health", "description": "服务健康检查"},
 			{"name": "qr", "description": "微信扫码登录"},
+			{"name": "quick-login", "description": "桌面微信快速授权"},
 			{"name": "accounts", "description": "已保存的微信账号"},
 			{"name": "qinglong", "description": "账号级青龙任务与推送管理"},
 			{"name": "wxapp", "description": "wxapp 业务接口调用"},
@@ -71,6 +72,28 @@ func newOpenAPISpec() map[string]any {
 					"确认已授权的扫码会话并保存账号",
 					[]map[string]any{pathStringParam("session_id", "二维码会话 ID。")},
 					nil,
+					defaulted(map[string]any{
+						"200": jsonResponse("已保存的账号信息。", refSchema("AccountPublic")),
+					}),
+				),
+			},
+			"/quick-login": map[string]any{
+				"post": openAPIOperation(
+					[]string{"quick-login"},
+					"创建桌面微信快速授权会话",
+					nil,
+					nil,
+					defaulted(map[string]any{
+						"200": jsonResponse("快速授权参数。", refSchema("QuickLoginCreateResponse")),
+					}),
+				),
+			},
+			"/quick-login/{session_id}/confirm": map[string]any{
+				"post": openAPIOperation(
+					[]string{"quick-login"},
+					"确认桌面微信授权并保存账号",
+					[]map[string]any{pathStringParam("session_id", "快速授权会话 ID。")},
+					jsonRequestBody(refSchema("QuickLoginConfirmRequest")),
 					defaulted(map[string]any{
 						"200": jsonResponse("已保存的账号信息。", refSchema("AccountPublic")),
 					}),
@@ -282,6 +305,18 @@ func newOpenAPISpec() map[string]any {
 						"enum": []string{"pending", "scanned", "authorized", "confirmed", "expired", "cancelled", "unknown"},
 					},
 					"errcode": map[string]any{"type": "integer", "nullable": true},
+				}),
+				"QuickLoginCreateResponse": objectSchema([]string{"session_id", "appid", "scope", "redirect_uri", "state", "ports", "expires_in"}, map[string]any{
+					"session_id":   map[string]any{"type": "string"},
+					"appid":        map[string]any{"type": "string"},
+					"scope":        map[string]any{"type": "string"},
+					"redirect_uri": map[string]any{"type": "string", "format": "uri"},
+					"state":        map[string]any{"type": "string"},
+					"ports":        arraySchema(map[string]any{"type": "integer"}),
+					"expires_in":   map[string]any{"type": "integer", "format": "int64"},
+				}),
+				"QuickLoginConfirmRequest": objectSchema([]string{"redirect_url"}, map[string]any{
+					"redirect_url": map[string]any{"type": "string", "format": "uri"},
 				}),
 				"AccountPublic": objectSchema([]string{"id", "openid", "created_at", "updated_at"}, map[string]any{
 					"id":              int64Schema(),

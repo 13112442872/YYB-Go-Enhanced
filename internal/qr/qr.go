@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"regexp"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,11 +20,16 @@ import (
 )
 
 const (
+	AppID            = "wxd44977328b36e647"
+	OAuthRedirectURI = "https://yybadaccess.3g.qq.com/pc_yyb/pcyyb_oauth?login_type=WX"
+	OAuthScope       = "snsapi_login,snsapi_runtime_pcsdk"
+	OAuthState       = "web"
+
 	oauthURL = "https://open.weixin.qq.com/connect/qrconnect" +
-		"?appid=wxd44977328b36e647" +
-		"&redirect_uri=https://yybadaccess.3g.qq.com/pc_yyb/pcyyb_oauth?login_type=WX" +
-		"&response_type=code&scope=snsapi_login,snsapi_runtime_pcsdk" +
-		"&state=web&fast_login=1&self_redirect=true"
+		"?appid=" + AppID +
+		"&redirect_uri=" + OAuthRedirectURI +
+		"&response_type=code&scope=" + OAuthScope +
+		"&state=" + OAuthState + "&fast_login=1&self_redirect=true"
 	callbackURL  = "https://yybadaccess.3g.qq.com/pc_yyb/pcyyb_oauth"
 	qrBase       = "https://open.weixin.qq.com/connect/qrcode/"
 	longPollBase = "https://long.open.weixin.qq.com/connect/l/qrconnect"
@@ -236,6 +242,25 @@ func (c *Client) GetLoginBuffer(ctx context.Context, sess *Session) (protocol.Lo
 	sess.LoginBuffer = lb
 	sess.Status = "confirmed"
 	return protocol.LoginBufferResult{LoginBuffer: lb, Credentials: creds}, nil
+}
+
+func (c *Client) GetLoginBufferFromCode(ctx context.Context, code string) (protocol.LoginBufferResult, error) {
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return protocol.LoginBufferResult{}, fmt.Errorf("authorize code is empty")
+	}
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		return protocol.LoginBufferResult{}, err
+	}
+	sess := &Session{
+		HTTPClient:    &http.Client{Timeout: c.timeout, Jar: jar},
+		Jar:           jar,
+		AuthorizeCode: code,
+		Status:        "authorized",
+		CreatedAt:     time.Now(),
+	}
+	return c.GetLoginBuffer(ctx, sess)
 }
 
 func (c *Client) RefreshLoginBuffer(ctx context.Context, creds protocol.LoginBufferCredentials) (protocol.LoginBufferResult, error) {

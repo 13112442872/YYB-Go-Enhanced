@@ -47,11 +47,14 @@ type App struct {
 	pool               *protocol.Pool
 	qr                 *qr.Client
 	refreshLoginBuffer func(context.Context, protocol.LoginBufferCredentials) (protocol.LoginBufferResult, error)
+	exchangeAuthCode   func(context.Context, string) (protocol.LoginBufferResult, error)
+	fetchUserInfo      func(context.Context, protocol.LoginBufferCredentials) (map[string]any, error)
 	qinglong           *qingLongClient
 
-	mu         sync.Mutex
-	qrSessions map[string]*qr.Session
-	refreshMu  sync.Mutex
+	mu            sync.Mutex
+	qrSessions    map[string]*qr.Session
+	quickSessions map[string]quickLoginSession
+	refreshMu     sync.Mutex
 
 	keepAliveCancel context.CancelFunc
 	keepAliveDone   chan struct{}
@@ -127,8 +130,11 @@ func NewApp(cfg Config) (*App, error) {
 		pool:               pool,
 		qr:                 qrClient,
 		refreshLoginBuffer: qrClient.RefreshLoginBuffer,
+		exchangeAuthCode:   qrClient.GetLoginBufferFromCode,
+		fetchUserInfo:      qrClient.LoginBuffers().FetchUserInfo,
 		qinglong:           newQingLongClient(cfg.QingLongURL, cfg.QingLongClientID, cfg.QingLongSecret, cfg.RequestTimeout),
 		qrSessions:         map[string]*qr.Session{},
+		quickSessions:      map[string]quickLoginSession{},
 	}
 	app.startKeepAlive()
 	return app, nil
@@ -168,6 +174,8 @@ func (a *App) Handler() http.Handler {
 	router.StaticFS("/static", http.Dir(a.resources.Static))
 	router.Any("/qr", gin.WrapF(a.handleQRRoot))
 	router.Any("/qr/*path", gin.WrapF(a.handleQR))
+	router.Any("/quick-login", gin.WrapF(a.handleQuickLoginRoot))
+	router.Any("/quick-login/*path", gin.WrapF(a.handleQuickLogin))
 	router.Any("/accounts", gin.WrapF(a.handleAccountsRoot))
 	router.Any("/accounts/avatar", gin.WrapF(a.handleAccountAvatar))
 	router.Any("/accounts/refresh", gin.WrapF(a.handleAccountRefresh))
@@ -328,7 +336,7 @@ func (a *App) handleQR(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var userInfo map[string]any
-		if ui, err := a.qr.LoginBuffers().FetchUserInfo(r.Context(), result.Credentials); err == nil {
+		if ui, err := a.fetchUserInfo(r.Context(), result.Credentials); err == nil {
 			userInfo = ui
 		}
 		acc, err := a.storeFromScan(r.Context(), result.LoginBuffer, result.Credentials, userInfo)
