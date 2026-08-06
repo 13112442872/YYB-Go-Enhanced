@@ -18,6 +18,7 @@ func newOpenAPISpec() map[string]any {
 			{"name": "accounts", "description": "已保存的微信账号"},
 			{"name": "qinglong", "description": "账号级青龙任务与推送管理"},
 			{"name": "wxapp", "description": "wxapp 业务接口调用"},
+			{"name": "oauth", "description": "微信公众号网页授权链接"},
 		},
 		"paths": map[string]any{
 			"/health": map[string]any{
@@ -242,6 +243,24 @@ func newOpenAPISpec() map[string]any {
 					[]string{"qinglong"}, "保存账号推送设置", nil,
 					jsonRequestBody(refSchema("PushSettingRequest")),
 					defaulted(map[string]any{"200": jsonResponse("保存后的推送配置状态。", refSchema("PushSetting"))}),
+				),
+			},
+			"/wx/oauth": map[string]any{
+				"post": openAPIOperation(
+					[]string{"oauth"},
+					"生成微信公众号网页授权链接",
+					nil,
+					jsonRequestBody(objectSchema([]string{"ref", "appid", "redirect_uri"}, map[string]any{
+						"ref":             map[string]any{"type": "string"},
+						"appid":           map[string]any{"type": "string", "description": "18 位公众号 AppID"},
+						"redirect_uri":    map[string]any{"type": "string", "format": "uri"},
+						"scope":           map[string]any{"type": "string", "enum": []string{"snsapi_base", "snsapi_userinfo"}},
+						"state":           map[string]any{"type": "string"},
+						"component_appid": map[string]any{"type": "string"},
+					})),
+					defaulted(map[string]any{
+						"200": jsonResponse("生成授权链接；用户授权后 code 会回传到 redirect_uri。", freeFormObjectSchema("公众号网页授权结果")),
+					}),
 				),
 			},
 			"/wxapp/getCode": map[string]any{

@@ -161,6 +161,7 @@ func (a *App) Handler() http.Handler {
 	router.Use(gin.Logger(), gin.Recovery())
 
 	router.Any("/", gin.WrapF(a.handleIndex))
+	router.Any("/oauth", gin.WrapF(a.handleOAuthPage))
 	router.Any("/scan", gin.WrapF(a.handleScan))
 	router.Any("/runs", gin.WrapF(a.handleRuns))
 	router.Any("/docs", func(c *gin.Context) {
@@ -191,6 +192,7 @@ func (a *App) Handler() http.Handler {
 	router.Any("/api/qinglong/runs", gin.WrapF(a.handleQingLongRuns))
 	router.Any("/api/qinglong/runs/log", gin.WrapF(a.handleQingLongRunLog))
 	router.Any("/api/qinglong/push", gin.WrapF(a.handleQingLongPush))
+	router.Any("/wx/oauth", gin.WrapF(a.handlePublicOAuth))
 	router.Any("/wxapp/getCode", gin.WrapF(a.handleGetCode))
 	router.Any("/wxapp/getPhoneNumber", gin.WrapF(a.handleGetPhoneNumber))
 	router.Any("/wxapp/operateWxData", gin.WrapF(a.handleOperateWXData))
