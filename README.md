@@ -1,5 +1,7 @@
 # YYB Go Enhanced
 
+主要功能变化请查看 [更新日志](CHANGELOG.md)。
+
 应用宝协议服务增强版，提供微信扫码登录、账号与 OpenID 管理、`wx.login` code 获取、凭据按需续期、Web 控制台，以及 Docker 和青龙接入。
 
 ## 功能
