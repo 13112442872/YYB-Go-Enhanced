@@ -1,5 +1,15 @@
 package httpapi
 
+func wxAliasOperation(summary, requestSchema, responseSchema string) map[string]any {
+	return map[string]any{
+		"post": openAPIOperation(
+			[]string{"wx"}, summary, nil,
+			jsonRequestBody(refSchema(requestSchema)),
+			defaulted(map[string]any{"200": jsonResponse(summary+"。", refSchema(responseSchema))}),
+		),
+	}
+}
+
 func newOpenAPISpec() map[string]any {
 	return map[string]any{
 		"openapi": "3.0.3",
@@ -18,6 +28,7 @@ func newOpenAPISpec() map[string]any {
 			{"name": "accounts", "description": "已保存的微信账号"},
 			{"name": "qinglong", "description": "账号级青龙任务与推送管理"},
 			{"name": "wxapp", "description": "wxapp 业务接口调用"},
+			{"name": "wx", "description": "兼容 /wx/* 的微信业务接口"},
 			{"name": "oauth", "description": "微信公众号网页授权链接"},
 		},
 		"paths": map[string]any{
@@ -263,6 +274,23 @@ func newOpenAPISpec() map[string]any {
 					}),
 				),
 			},
+			"/wx/code": wxAliasOperation("获取小程序 code（兼容入口）", "WxappRequest", "WxappResponse"),
+			"/wx/getuserinfo": map[string]any{
+				"get": openAPIOperation([]string{"wx"}, "获取 YYB 账号用户信息", []map[string]any{queryStringParam("ref", "账号 ID、UIN 或 openid。", true)}, nil,
+					defaulted(map[string]any{"200": jsonResponse("用户信息。", freeFormObjectSchema("用户信息结果"))})),
+				"post": openAPIOperation([]string{"wx"}, "获取 YYB 账号用户信息", nil, jsonRequestBody(refSchema("AccountRefRequest")),
+					defaulted(map[string]any{"200": jsonResponse("用户信息。", freeFormObjectSchema("用户信息结果"))})),
+			},
+			"/wx/encryptkey":     wxAliasOperation("获取用户加密 Key", "WxappRequest", "WxappResponse"),
+			"/wx/getphonenumber": wxAliasOperation("获取手机号（兼容入口）", "WxappRequest", "WxappResponse"),
+			"/wx/cloud":          wxAliasOperation("云函数/通用 operateWxData 兼容入口", "OperateWXDataRequest", "WxappResponse"),
+			"/wx/qrcodeauth": map[string]any{
+				"post": openAPIOperation([]string{"qr"}, "创建二维码授权会话", nil, nil,
+					defaulted(map[string]any{"200": jsonResponse("二维码授权会话。", refSchema("QRCreateResponse"))})),
+			},
+			"/wx/mpgeta8key": wxAliasOperation("文章会话兼容入口", "OperateWXDataRequest", "WxappResponse"),
+			"/wx/appmsgext":  wxAliasOperation("文章扩展数据兼容入口", "OperateWXDataRequest", "WxappResponse"),
+			"/wx/appmsglike": wxAliasOperation("文章点赞兼容入口", "OperateWXDataRequest", "WxappResponse"),
 			"/wxapp/getCode": map[string]any{
 				"post": openAPIOperation(
 					[]string{"wxapp"},
@@ -273,6 +301,18 @@ func newOpenAPISpec() map[string]any {
 						"200": jsonResponse("getCode 调用结果。", refSchema("WxappResponse")),
 					}),
 				),
+			},
+			"/wx/qrcodeauth/{session_id}/image": map[string]any{
+				"get": openAPIOperation([]string{"qr"}, "获取兼容二维码图片", []map[string]any{pathStringParam("session_id", "二维码会话 ID。")}, nil,
+					defaulted(map[string]any{"200": imageResponse("二维码图片。")})),
+			},
+			"/wx/qrcodeauth/{session_id}/poll": map[string]any{
+				"get": openAPIOperation([]string{"qr"}, "轮询兼容二维码状态", []map[string]any{pathStringParam("session_id", "二维码会话 ID。")}, nil,
+					defaulted(map[string]any{"200": jsonResponse("扫码状态。", refSchema("QRPollResponse"))})),
+			},
+			"/wx/qrcodeauth/{session_id}/confirm": map[string]any{
+				"post": openAPIOperation([]string{"qr"}, "确认兼容二维码授权", []map[string]any{pathStringParam("session_id", "二维码会话 ID。")}, nil,
+					defaulted(map[string]any{"200": jsonResponse("已保存的账号。", refSchema("AccountPublic"))})),
 			},
 			"/wxapp/getPhoneNumber": map[string]any{
 				"post": openAPIOperation(

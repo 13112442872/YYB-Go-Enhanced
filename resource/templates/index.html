@@ -855,10 +855,15 @@
     const state = {
       accounts: [],
       features: [
-        { name: "getCode" },
-        { name: "getPhoneNumber" },
-        { name: "operateWxData" },
-        { name: "oauth", label: "公众号网页授权" }
+        { name: "getCode", label: "/wx/code 获取小程序 code", route: "/wx/code", requiresAppID: true },
+        { name: "getUserInfo", label: "/wx/getuserinfo 用户信息", route: "/wx/getuserinfo", requiresAppID: false },
+        { name: "encryptKey", label: "/wx/encryptkey 加密 key", route: "/wx/encryptkey", requiresAppID: true },
+        { name: "getPhoneNumber", label: "/wx/getphonenumber 手机号", route: "/wx/getphonenumber", requiresAppID: true },
+        { name: "cloud", label: "/wx/cloud 云函数", route: "/wx/cloud", requiresAppID: true, needsPayload: true },
+        { name: "mpGetA8Key", label: "/wx/mpgeta8key 文章会话", route: "/wx/mpgeta8key", requiresAppID: true, needsPayload: true },
+        { name: "appmsgext", label: "/wx/appmsgext 文章阅读数", route: "/wx/appmsgext", requiresAppID: true, needsPayload: true },
+        { name: "appmsglike", label: "/wx/appmsglike 文章点赞", route: "/wx/appmsglike", requiresAppID: true, needsPayload: true },
+        { name: "oauth", label: "/wx/oauth 公众号授权", route: "/wx/oauth", requiresAppID: true }
       ],
       selectedOpenID: "",
       lastResult: ""
@@ -1029,9 +1034,15 @@
       return option ? option.dataset.name || "" : "";
     }
 
+    function currentFeature() {
+      const name = currentFeatureName();
+      return state.features.find(feature => feature.name === name) || null;
+    }
+
     function togglePayload() {
       const feature = currentFeatureName().toLowerCase();
-      const needsPayload = feature === "operatewxdata";
+      const selected = currentFeature();
+      const needsPayload = Boolean(selected?.needsPayload);
       const isOAuth = feature === "oauth";
       $("payloadGroup").classList.toggle("hidden", !needsPayload);
       $("oauthRedirectGroup").classList.toggle("hidden", !isOAuth);
@@ -1225,12 +1236,13 @@
       }
 
       const endpoint = currentFeatureName();
+      const feature = currentFeature();
       const appID = $("appidInput").value.trim();
       if (!endpoint) {
         setResult("当前没有可调用能力。", "缺少能力", true);
         return;
       }
-      if (!appID) {
+      if (feature?.requiresAppID !== false && !appID) {
         setResult("请输入 APPID。", "缺少 APPID", true);
         return;
       }
@@ -1244,12 +1256,13 @@
             scope: $("oauthScopeInput").value,
             state: $("oauthStateInput").value.trim()
           }
-        : { ref: account.openid, app_id: appID };
+        : { ref: account.openid };
+      if (!isOAuth && feature?.requiresAppID !== false) body.app_id = appID;
       if (isOAuth && !body.redirect_uri) {
         setResult("请填写公众号回调地址。", "缺少回调地址", true);
         return;
       }
-      if (endpoint.toLowerCase() === "operatewxdata") {
+      if (feature?.needsPayload) {
         const raw = $("payloadInput").value.trim();
         if (!raw) {
           setResult("operateWxData 需要请求 JSON。", "缺少 payload", true);
@@ -1270,7 +1283,7 @@
       setActivity(`正在调用 ${endpoint}：${accountName(account)}`);
 
       try {
-        const result = await api("POST", isOAuth ? "/wx/oauth" : `/wxapp/${endpoint}`, body);
+        const result = await api("POST", feature?.route || (isOAuth ? "/wx/oauth" : `/wxapp/${endpoint}`), body);
         const seconds = ((performance.now() - startedAt) / 1000).toFixed(1);
         setResult(result, `调用完成，用时 ${seconds}s`, false);
         await loadAccounts();

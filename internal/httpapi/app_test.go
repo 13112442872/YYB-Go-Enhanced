@@ -61,7 +61,7 @@ func TestHandlerServesGinRoutesAndSwaggerDocs(t *testing.T) {
 	if !ok {
 		t.Fatalf("OpenAPI paths missing or invalid")
 	}
-	for _, path := range []string{"/quick-login", "/quick-login/{session_id}/confirm", "/wxapp/getCode", "/wxapp/getPhoneNumber", "/wxapp/operateWxData", "/accounts/avatar", "/accounts/remark", "/api/qinglong/config", "/api/qinglong/sync", "/api/qinglong/jobs", "/api/qinglong/push"} {
+	for _, path := range []string{"/quick-login", "/quick-login/{session_id}/confirm", "/wx/code", "/wx/getuserinfo", "/wx/encryptkey", "/wx/getphonenumber", "/wx/cloud", "/wx/qrcodeauth", "/wx/mpgeta8key", "/wx/appmsgext", "/wx/appmsglike", "/wxapp/getCode", "/wxapp/getPhoneNumber", "/wxapp/operateWxData", "/accounts/avatar", "/accounts/remark", "/api/qinglong/config", "/api/qinglong/sync", "/api/qinglong/jobs", "/api/qinglong/push"} {
 		if _, ok := paths[path]; !ok {
 			t.Fatalf("OpenAPI path %s missing", path)
 		}
@@ -72,6 +72,14 @@ func TestHandlerServesGinRoutesAndSwaggerDocs(t *testing.T) {
 		tags := post["tags"].([]any)
 		if len(tags) != 1 || tags[0] != "wxapp" {
 			t.Fatalf("OpenAPI path %s tags = %#v, want [wxapp]", path, tags)
+		}
+	}
+	for _, path := range []string{"/wx/code", "/wx/encryptkey", "/wx/getphonenumber", "/wx/cloud", "/wx/mpgeta8key", "/wx/appmsgext", "/wx/appmsglike"} {
+		pathItem := paths[path].(map[string]any)
+		post := pathItem["post"].(map[string]any)
+		tags := post["tags"].([]any)
+		if len(tags) != 1 || tags[0] != "wx" {
+			t.Fatalf("OpenAPI path %s tags = %#v, want [wx]", path, tags)
 		}
 	}
 	for _, path := range []string{"/accounts/{ref}", "/accounts/{ref}/getCode", "/accounts/{ref}/getPhoneNumber", "/accounts/{ref}/operateWxData", "/accounts/getCode", "/accounts/getPhoneNumber", "/accounts/operateWxData"} {
@@ -113,5 +121,17 @@ func TestHandlerServesGinRoutesAndSwaggerDocs(t *testing.T) {
 	handler.ServeHTTP(oldPath, httptest.NewRequest(http.MethodPost, "/accounts/getCode", nil))
 	if oldPath.Code != http.StatusNotFound {
 		t.Fatalf("POST old account feature route status = %d", oldPath.Code)
+	}
+	for _, path := range []string{"/wx/code", "/wx/encryptkey", "/wx/getphonenumber", "/wx/cloud", "/wx/mpgeta8key", "/wx/appmsgext", "/wx/appmsglike", "/wx/qrcodeauth"} {
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
+		if recorder.Code != http.StatusMethodNotAllowed {
+			t.Fatalf("GET %s status = %d, want %d", path, recorder.Code, http.StatusMethodNotAllowed)
+		}
+	}
+	userinfo := httptest.NewRecorder()
+	handler.ServeHTTP(userinfo, httptest.NewRequest(http.MethodGet, "/wx/getuserinfo", nil))
+	if userinfo.Code != http.StatusBadRequest {
+		t.Fatalf("GET /wx/getuserinfo without ref status = %d, want %d", userinfo.Code, http.StatusBadRequest)
 	}
 }

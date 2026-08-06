@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -195,6 +196,18 @@ func (a *App) Handler() http.Handler {
 	router.Any("/wxapp/getCode", gin.WrapF(a.handleGetCode))
 	router.Any("/wxapp/getPhoneNumber", gin.WrapF(a.handleGetPhoneNumber))
 	router.Any("/wxapp/operateWxData", gin.WrapF(a.handleOperateWXData))
+	// Keep the shorter /wx/* names used by existing YYB clients. The handlers
+	// share the same session and retry logic as the canonical /wxapp/* routes.
+	router.Any("/wx/code", gin.WrapF(a.handleWXCodeAlias))
+	router.Any("/wx/getuserinfo", gin.WrapF(a.handleWXGetUserInfo))
+	router.Any("/wx/encryptkey", gin.WrapF(a.handleWXEncryptKey))
+	router.Any("/wx/getphonenumber", gin.WrapF(a.handleWXPhoneAlias))
+	router.Any("/wx/cloud", gin.WrapF(a.handleWXCloud))
+	router.Any("/wx/qrcodeauth", gin.WrapF(a.handleQRRoot))
+	router.Any("/wx/qrcodeauth/*path", gin.WrapF(a.handleQR))
+	router.Any("/wx/mpgeta8key", gin.WrapF(a.handleWXMPGetA8Key))
+	router.Any("/wx/appmsgext", gin.WrapF(a.handleWXAppMsgExt))
+	router.Any("/wx/appmsglike", gin.WrapF(a.handleWXAppMsgLike))
 	router.NoRoute(func(c *gin.Context) {
 		writeError(c.Writer, http.StatusNotFound, "not found")
 	})
@@ -243,7 +256,7 @@ func (a *App) handleOpenAPI(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleQRRoot(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/qr" {
+	if r.URL.Path != "/qr" && r.URL.Path != "/wx/qrcodeauth" {
 		writeError(w, http.StatusNotFound, "qr session not found")
 		return
 	}
@@ -269,10 +282,14 @@ func (a *App) handleQRRoot(w http.ResponseWriter, r *http.Request) {
 	path := a.resources.qrPath(img.Session.ID)
 	_ = os.WriteFile(path, img.ImageBytes, 0o644)
 	a.cleanupQR(keep)
+	basePath := "/qr"
+	if r.URL.Path == "/wx/qrcodeauth" {
+		basePath = "/wx/qrcodeauth"
+	}
 	out := map[string]any{
 		"session_id": img.Session.ID,
 		"status":     img.Session.Status,
-		"image_url":  "/qr/" + img.Session.ID + "/image",
+		"image_url":  basePath + "/" + img.Session.ID + "/image",
 	}
 	if r.URL.Query().Get("as_base64") == "true" {
 		out["image_base64"] = qr.DataURIJPEG(img.ImageBytes)
@@ -283,7 +300,11 @@ func (a *App) handleQRRoot(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleQR(w http.ResponseWriter, r *http.Request) {
-	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/qr/"), "/")
+	path := strings.TrimPrefix(r.URL.Path, "/qr/")
+	if path == r.URL.Path {
+		path = strings.TrimPrefix(r.URL.Path, "/wx/qrcodeauth/")
+	}
+	parts := strings.Split(path, "/")
 	if len(parts) != 2 {
 		writeError(w, http.StatusNotFound, "qr session not found")
 		return
@@ -472,8 +493,22 @@ func (a *App) handleGetCode(w http.ResponseWriter, r *http.Request) {
 	a.callWXApp(w, r, false, a.invokeGetCode)
 }
 
+func (a *App) handleWXCodeAlias(w http.ResponseWriter, r *http.Request) {
+	if !acceptWXAppRoute(w, r, "/wx/code") {
+		return
+	}
+	a.callWXApp(w, r, false, a.invokeGetCode)
+}
+
 func (a *App) handleGetPhoneNumber(w http.ResponseWriter, r *http.Request) {
 	if !acceptWXAppRoute(w, r, "/wxapp/getPhoneNumber") {
+		return
+	}
+	a.callWXApp(w, r, false, a.invokeGetPhoneNumber)
+}
+
+func (a *App) handleWXPhoneAlias(w http.ResponseWriter, r *http.Request) {
+	if !acceptWXAppRoute(w, r, "/wx/getphonenumber") {
 		return
 	}
 	a.callWXApp(w, r, false, a.invokeGetPhoneNumber)
@@ -484,6 +519,129 @@ func (a *App) handleOperateWXData(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.callWXApp(w, r, true, a.invokeOperateWXData)
+}
+
+func (a *App) handleWXEncryptKey(w http.ResponseWriter, r *http.Request) {
+	a.handleNamedWXOperation(w, r, "/wx/encryptkey", "getUserEncryptKey", false)
+}
+
+func (a *App) handleWXCloud(w http.ResponseWriter, r *http.Request) {
+	a.handleNamedWXOperation(w, r, "/wx/cloud", "cloud.callFunction", true)
+}
+
+func (a *App) handleWXMPGetA8Key(w http.ResponseWriter, r *http.Request) {
+	a.handleNamedWXOperation(w, r, "/wx/mpgeta8key", "mpGetA8Key", true)
+}
+
+func (a *App) handleWXAppMsgExt(w http.ResponseWriter, r *http.Request) {
+	a.handleNamedWXOperation(w, r, "/wx/appmsgext", "appmsgext", true)
+}
+
+func (a *App) handleWXAppMsgLike(w http.ResponseWriter, r *http.Request) {
+	a.handleNamedWXOperation(w, r, "/wx/appmsglike", "appmsglike", true)
+}
+
+// handleNamedWXOperation adapts named /wx/* compatibility calls to the
+// generic operateWxData transport. Callers may provide a complete payload;
+// otherwise a minimal api_name/data envelope is generated.
+func (a *App) handleNamedWXOperation(w http.ResponseWriter, r *http.Request, path, apiName string, requirePayload bool) {
+	if !acceptWXAppRoute(w, r, path) {
+		return
+	}
+	var body wxappRequest
+	if err := decodeOptionalJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		return
+	}
+	if body.Payload == nil {
+		if requirePayload {
+			writeError(w, http.StatusBadRequest, "payload is required for "+apiName)
+			return
+		}
+		body.Payload = map[string]any{"api_name": apiName, "data": map[string]any{}, "env": 1}
+	}
+	result, err := a.invokeNamedWXOperation(r.Context(), body, apiName)
+	if err != nil {
+		var expired accountExpiredError
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			writeError(w, http.StatusNotFound, "account not found: "+body.Ref)
+			return
+		case errors.As(err, &expired):
+			writeError(w, http.StatusConflict, "account login_buffer expired (refresh failed); re-scan required")
+			return
+		case strings.Contains(err.Error(), " is required"):
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeError(w, http.StatusBadGateway, "call failed: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (a *App) invokeNamedWXOperation(ctx context.Context, body wxappRequest, apiName string) (map[string]any, error) {
+	if body.Ref == "" {
+		return nil, fmt.Errorf("ref is required")
+	}
+	if body.AppID == "" {
+		return nil, fmt.Errorf("app_id is required")
+	}
+	acc, err := a.db.ResolveAccount(ctx, strings.TrimSpace(body.Ref))
+	if err != nil {
+		return nil, err
+	}
+	if body.Payload == nil {
+		body.Payload = map[string]any{"api_name": apiName, "data": map[string]any{}, "env": 1}
+	}
+	result, err := a.invokeWXApp(ctx, acc, body.AppID, body.Payload, a.invokeOperateWXData)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"openid": acc.OpenID, "result": result}, nil
+}
+
+func (a *App) handleWXGetUserInfo(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/wx/getuserinfo" {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	if r.Method != http.MethodGet && r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	var body accountRefIn
+	if r.Method == http.MethodPost {
+		if err := decodeOptionalJSON(r, &body); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+			return
+		}
+	} else {
+		body.Ref = r.URL.Query().Get("ref")
+	}
+	acc, ok := a.resolveAccountRef(w, r, body.Ref)
+	if !ok {
+		return
+	}
+	if len(acc.Credentials) == 0 {
+		writeError(w, http.StatusConflict, "account has no login credentials")
+		return
+	}
+	creds := protocol.CredentialsFromMap(acc.Credentials)
+	info, err := a.fetchUserInfo(r.Context(), creds)
+	if err != nil {
+		if status := a.refreshLiveness(r.Context(), acc); status == "alive" {
+			if fresh, getErr := a.db.GetAccount(r.Context(), acc.ID); getErr == nil {
+				acc = fresh
+				info, err = a.fetchUserInfo(r.Context(), protocol.CredentialsFromMap(acc.Credentials))
+			}
+		}
+	}
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "getuserinfo failed: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"openid": acc.OpenID, "user_info": info})
 }
 
 func acceptWXAppRoute(w http.ResponseWriter, r *http.Request, path string) bool {

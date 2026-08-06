@@ -10,7 +10,7 @@
 - 扫码成功后可填写账号备注，并一键合并到青龙 `YYB_SERVER`，重复操作不会产生重复账号
 - Web 控制台可选配置青龙 OpenAPI，保存前自动测试连接且不会回传 Client Secret 明文
 - Web 控制台管理账号并复制 OpenID
-- 提供 `getCode`、`getPhoneNumber` 和 `operateWxData` 接口
+- 提供 `/wx/*` 和 `/wxapp/*` 两套兼容接口：小程序 code、用户信息、手机号、加密 Key、云函数、二维码授权、文章会话/扩展数据/点赞
 - 应用宝短期凭据接近失效时由后台任务主动续期，业务调用失败时也会按需续期
 - SQLite 持久化账号与协议会话
 - Nginx Basic Auth 保护公开的 Web 入口
@@ -98,6 +98,35 @@ YYB_SERVER=yyb-go:8000@1
 已确认报错的青龙脚本修复版收录在 [`scripts/`](scripts/README.md)。
 
 ## API 示例
+
+截图中的短路径均已提供兼容入口：
+
+```text
+/wx/code             获取小程序 code
+/wx/getuserinfo      获取 YYB 账号用户信息
+/wx/encryptkey       获取用户加密 Key（默认通过 operateWxData 调用）
+/wx/getphonenumber   获取手机号
+/wx/cloud            云函数（通过 operateWxData 传递 payload）
+/wx/qrcodeauth       二维码授权会话
+/wx/mpgeta8key       文章会话（通过 operateWxData 传递 payload）
+/wx/appmsgext        文章扩展数据（通过 operateWxData 传递 payload）
+/wx/appmsglike       文章点赞（通过 operateWxData 传递 payload）
+```
+
+这些接口不会伪造微信返回值。`/wx/cloud`、`/wx/mpgeta8key`、`/wx/appmsgext` 和 `/wx/appmsglike` 需要调用方在 `payload` 中提供目标小程序实际支持的 `api_name`、`data` 等字段，例如：
+
+```json
+{
+  "ref": "1",
+  "app_id": "wx0000000000000000",
+  "payload": {
+    "api_name": "callFunction",
+    "data": {"name": "签到", "data": {}}
+  }
+}
+```
+
+若目标接口不是 `operateWxData` 能力，服务端会原样返回微信协议的错误，需根据该小程序抓包请求补充真实字段。
 
 获取 `wx.login` code：
 
