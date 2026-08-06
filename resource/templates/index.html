@@ -686,7 +686,6 @@
       <div class="top-actions">
         <span class="status-pill" id="healthPill"><span class="status-dot"></span><span>检测服务中</span></span>
         <a class="btn secondary" href="/runs">运行管理</a>
-        <a class="btn secondary" href="/oauth">公众号授权</a>
         <a class="btn secondary" href="/docs/index.html">Swagger</a>
         <a class="btn primary" href="/scan">扫码添加</a>
       </div>
@@ -754,8 +753,23 @@
                 <select class="select" id="featureSel"></select>
               </div>
               <div class="field">
-                <label for="appidInput">APPID</label>
+                <label for="appidInput" id="appidLabel">APPID</label>
                 <input class="input" id="appidInput" value="wx141bfb9b73c970a9" autocomplete="off" spellcheck="false">
+              </div>
+              <div class="field hidden" id="oauthRedirectGroup">
+                <label for="oauthRedirectInput">公众号回调地址</label>
+                <input class="input" id="oauthRedirectInput" type="url" placeholder="https://你的域名/callback" autocomplete="url">
+              </div>
+              <div class="field hidden" id="oauthScopeGroup">
+                <label for="oauthScopeInput">授权范围</label>
+                <select class="select" id="oauthScopeInput">
+                  <option value="snsapi_base">snsapi_base（静默授权）</option>
+                  <option value="snsapi_userinfo">snsapi_userinfo（用户确认）</option>
+                </select>
+              </div>
+              <div class="field hidden" id="oauthStateGroup">
+                <label for="oauthStateInput">State（可选）</label>
+                <input class="input" id="oauthStateInput" maxlength="128" placeholder="留空自动生成随机值" autocomplete="off">
               </div>
               <div class="field hidden" id="payloadGroup">
                 <label for="payloadInput">请求 JSON</label>
@@ -843,7 +857,8 @@
       features: [
         { name: "getCode" },
         { name: "getPhoneNumber" },
-        { name: "operateWxData" }
+        { name: "operateWxData" },
+        { name: "oauth", label: "公众号网页授权" }
       ],
       selectedOpenID: "",
       lastResult: ""
@@ -1002,7 +1017,8 @@
         return;
       }
       select.innerHTML = state.features.map(feature => {
-        return `<option value="${escapeHTML(feature.name)}" data-name="${escapeHTML(feature.name)}">${escapeHTML(feature.name)}</option>`;
+        const label = feature.label || feature.name;
+        return `<option value="${escapeHTML(feature.name)}" data-name="${escapeHTML(feature.name)}">${escapeHTML(label)}</option>`;
       }).join("");
       togglePayload();
       renderStats();
@@ -1014,8 +1030,15 @@
     }
 
     function togglePayload() {
-      const needsPayload = currentFeatureName().toLowerCase() === "operatewxdata";
+      const feature = currentFeatureName().toLowerCase();
+      const needsPayload = feature === "operatewxdata";
+      const isOAuth = feature === "oauth";
       $("payloadGroup").classList.toggle("hidden", !needsPayload);
+      $("oauthRedirectGroup").classList.toggle("hidden", !isOAuth);
+      $("oauthScopeGroup").classList.toggle("hidden", !isOAuth);
+      $("oauthStateGroup").classList.toggle("hidden", !isOAuth);
+      $("appidLabel").textContent = isOAuth ? "公众号 AppID" : "APPID";
+      $("appidInput").placeholder = isOAuth ? "wx...（18 位公众号 AppID）" : "小程序 AppID";
     }
 
     async function loadHealth() {
@@ -1212,7 +1235,20 @@
         return;
       }
 
-      const body = { ref: account.openid, app_id: appID };
+      const isOAuth = endpoint.toLowerCase() === "oauth";
+      const body = isOAuth
+        ? {
+            ref: String(account.id),
+            appid: appID,
+            redirect_uri: $("oauthRedirectInput").value.trim(),
+            scope: $("oauthScopeInput").value,
+            state: $("oauthStateInput").value.trim()
+          }
+        : { ref: account.openid, app_id: appID };
+      if (isOAuth && !body.redirect_uri) {
+        setResult("请填写公众号回调地址。", "缺少回调地址", true);
+        return;
+      }
       if (endpoint.toLowerCase() === "operatewxdata") {
         const raw = $("payloadInput").value.trim();
         if (!raw) {
@@ -1234,7 +1270,7 @@
       setActivity(`正在调用 ${endpoint}：${accountName(account)}`);
 
       try {
-        const result = await api("POST", `/wxapp/${endpoint}`, body);
+        const result = await api("POST", isOAuth ? "/wx/oauth" : `/wxapp/${endpoint}`, body);
         const seconds = ((performance.now() - startedAt) / 1000).toFixed(1);
         setResult(result, `调用完成，用时 ${seconds}s`, false);
         await loadAccounts();

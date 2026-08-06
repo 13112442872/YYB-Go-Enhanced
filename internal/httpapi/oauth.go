@@ -2,24 +2,9 @@ package httpapi
 
 import (
 	"net/http"
-	"path/filepath"
 
 	"yyb_go/internal/oauth"
 )
-
-const fallbackOAuthHTML = `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>公众号网页授权</title><h1>公众号网页授权页面缺失</h1><p>请检查 resource/templates/oauth.html 是否存在。</p><p><a href="/">返回控制台</a></p>`
-
-func (a *App) handleOAuthPage(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/oauth" {
-		writeError(w, http.StatusNotFound, "not found")
-		return
-	}
-	if r.Method != http.MethodGet {
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-	serveFileOrText(w, r, filepath.Join(a.resources.Templates, "oauth.html"), fallbackOAuthHTML)
-}
 
 type publicOAuthRequest struct {
 	Ref            string `json:"ref"`

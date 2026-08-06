@@ -161,7 +161,6 @@ func (a *App) Handler() http.Handler {
 	router.Use(gin.Logger(), gin.Recovery())
 
 	router.Any("/", gin.WrapF(a.handleIndex))
-	router.Any("/oauth", gin.WrapF(a.handleOAuthPage))
 	router.Any("/scan", gin.WrapF(a.handleScan))
 	router.Any("/runs", gin.WrapF(a.handleRuns))
 	router.Any("/docs", func(c *gin.Context) {
