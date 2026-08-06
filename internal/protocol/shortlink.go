@@ -123,7 +123,7 @@ func parse0RTTResponse(rbody, psk, pskCH, type8, recvKey []byte) ([]byte, []byte
 	recs, _ := parseRecords(rbody)
 	var sh []byte
 	var encHS [][]byte
-	var appdata []byte
+	var appdata [][]byte
 	for _, r := range recs {
 		if r.ContentType == ctHandshake {
 			if sh == nil {
@@ -131,11 +131,11 @@ func parse0RTTResponse(rbody, psk, pskCH, type8, recvKey []byte) ([]byte, []byte
 			}
 			encHS = append(encHS, r.Payload)
 		}
-		if r.ContentType == ctAppData && appdata == nil {
-			appdata = r.Payload
+		if r.ContentType == ctAppData {
+			appdata = append(appdata, r.Payload)
 		}
 	}
-	if sh == nil || appdata == nil {
+	if sh == nil || len(appdata) == 0 {
 		return nil, nil, fmt.Errorf("response missing ServerHello/AppData")
 	}
 	candidates := [][]byte{
@@ -143,23 +143,55 @@ func parse0RTTResponse(rbody, psk, pskCH, type8, recvKey []byte) ([]byte, []byte
 		bytes.Join([][]byte{pskCH, type8, sh}, nil),
 		bytes.Join([][]byte{pskCH, sh, type8}, nil),
 	}
+	outerDecrypts := 0
+	shortlinkFrames := 0
+	lastFrame := "none"
 	for _, trans := range candidates {
 		h := sha256.Sum256(trans)
 		hk := derivePSKOneWayKeys(psk, labelHandshakeKeys, h[:])
-		for _, seq := range []uint64{2, 1, 3} {
-			ad, err := decryptRecordPayload(hk.Key, hk.IV, seq, ctAppData, appdata)
-			if err != nil {
-				continue
-			}
-			if sl, err := parseShortlink(ad); err == nil {
-				if resp, err := sessionDecrypt(sl.Body, recvKey); err == nil {
+		for appIndex, appPayload := range appdata {
+			seqCandidates := []uint64{uint64(appIndex + 2), uint64(appIndex + 1), uint64(appIndex + 3), 1, 2, 3, 4, 5, 6, 7, 8}
+			seenSeq := map[uint64]bool{}
+			for _, seq := range seqCandidates {
+				if seenSeq[seq] {
+					continue
+				}
+				seenSeq[seq] = true
+				ad, err := decryptRecordPayload(hk.Key, hk.IV, seq, ctAppData, appPayload)
+				if err != nil {
+					continue
+				}
+				outerDecrypts++
+				for _, sl := range findShortlinkPackets(ad) {
+					shortlinkFrames++
+					lastFrame = fmt.Sprintf("cmd=%d ver=%d body=%d wpkg=invalid", sl.Cmd, sl.Ver, len(sl.Body))
+					if _, _, headLen, err := decodeWpkgHead(sl.Body); err == nil {
+						lastFrame = fmt.Sprintf("cmd=%d ver=%d body=%d wpkg_head=%d", sl.Cmd, sl.Ver, len(sl.Body), headLen)
+					}
+					if resp, err := sessionDecrypt(sl.Body, recvKey); err == nil {
+						return extractCode(resp), resp, nil
+					}
+				}
+				if resp, err := sessionDecrypt(ad, recvKey); err == nil {
 					return extractCode(resp), resp, nil
 				}
 			}
-			if resp, err := sessionDecrypt(ad, recvKey); err == nil {
-				return extractCode(resp), resp, nil
-			}
 		}
 	}
-	return nil, nil, fmt.Errorf("AppData decrypt/parse failed")
+	return nil, nil, fmt.Errorf("AppData decrypt/parse failed: records=%d appdata=%d outer_decrypts=%d shortlink_frames=%d last_frame={%s}", len(recs), len(appdata), outerDecrypts, shortlinkFrames, lastFrame)
+}
+
+func findShortlinkPackets(raw []byte) []shortlinkPacket {
+	var out []shortlinkPacket
+	for offset := 0; offset+16 <= len(raw); offset++ {
+		if binary.BigEndian.Uint16(raw[offset+4:offset+6]) != shortlinkMagic {
+			continue
+		}
+		packet, err := parseShortlink(raw[offset:])
+		if err == nil {
+			out = append(out, packet)
+			offset += packet.TotalLen - 1
+		}
+	}
+	return out
 }

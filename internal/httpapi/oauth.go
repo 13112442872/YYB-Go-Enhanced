@@ -1,9 +1,13 @@
 package httpapi
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"net/http"
 
 	"yyb_go/internal/oauth"
+	"yyb_go/internal/store"
 )
 
 type publicOAuthRequest struct {
@@ -54,17 +58,41 @@ func (a *App) handlePublicOAuth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
-		"account_id":             acc.ID,
-		"openid":                 acc.OpenID,
-		"appid":                  body.AppID,
-		"scope":                  result.Scope,
-		"state":                  result.State,
-		"url":                    result.URL,
-		"full_url":               result.FullURL,
-		"code":                   nil,
-		"authorization_required": true,
-		"callback_code_source":   "redirect_uri",
-		"mode":                   "authorization_url",
-	})
+	protocolResult, err := a.invokeWXApp(r.Context(), acc, body.AppID, map[string]any{
+		"scope": result.Scope, "state": result.State, "request_url": result.FullURL,
+	}, a.invokePublicOAuth)
+	if err == nil {
+		protocolResult["oauth_provider"] = "native"
+	} else if a.oauthUpstream != nil {
+		upstreamResult, upstreamErr := a.oauthUpstream.authorize(r.Context(), acc, oauthUpstreamRequest{
+			AppID: body.AppID, RedirectURI: body.RedirectURI, Scope: result.Scope,
+			State: result.State, ComponentAppID: body.ComponentAppID,
+		})
+		if upstreamErr == nil {
+			protocolResult = upstreamResult
+			err = nil
+		} else {
+			err = fmt.Errorf("native protocol failed: %v; upstream fallback failed: %w", err, upstreamErr)
+		}
+	}
+	if err != nil {
+		var expired accountExpiredError
+		if errors.As(err, &expired) {
+			writeError(w, http.StatusConflict, "account login_buffer expired (refresh failed); re-scan required")
+			return
+		}
+		writeError(w, http.StatusBadGateway, "OAuth authorization failed: "+err.Error())
+		return
+	}
+	protocolResult["account_id"] = acc.ID
+	protocolResult["openid"] = acc.OpenID
+	protocolResult["appid"] = body.AppID
+	protocolResult["scope"] = result.Scope
+	protocolResult["state"] = result.State
+	protocolResult["request_url"] = result.FullURL
+	writeJSON(w, http.StatusOK, protocolResult)
+}
+
+func (a *App) invokePublicOAuth(ctx context.Context, account *store.WechatAccount, appID string, payload map[string]any) (map[string]any, error) {
+	return a.authorizeOAuth(ctx, account, appID, stringFromAny(payload["scope"]), stringFromAny(payload["state"]), stringFromAny(payload["request_url"]))
 }
