@@ -860,6 +860,7 @@
         { name: "encryptKey", label: "/wx/encryptkey 加密 key", route: "/wx/encryptkey", requiresAppID: true },
         { name: "getPhoneNumber", label: "/wx/getphonenumber 手机号", route: "/wx/getphonenumber", requiresAppID: true },
         { name: "cloud", label: "/wx/cloud 云函数", route: "/wx/cloud", requiresAppID: true, needsPayload: true },
+        { name: "qrcodeauth", label: "/wx/qrcodeauth 二维码授权", route: "/wx/qrcodeauth", requiresAppID: false, requiresAccount: false },
         { name: "mpGetA8Key", label: "/wx/mpgeta8key 文章会话", route: "/wx/mpgeta8key", requiresAppID: true, needsPayload: true },
         { name: "appmsgext", label: "/wx/appmsgext 文章阅读数", route: "/wx/appmsgext", requiresAppID: true, needsPayload: true },
         { name: "appmsglike", label: "/wx/appmsglike 文章点赞", route: "/wx/appmsglike", requiresAppID: true, needsPayload: true },
@@ -1229,14 +1230,14 @@
     }
 
     async function callFeature() {
+      const feature = currentFeature();
       const account = selectedAccount();
-      if (!account) {
+      if (!account && feature?.requiresAccount !== false) {
         setResult("请先选择一个账号。", "缺少账号", true);
         return;
       }
 
       const endpoint = currentFeatureName();
-      const feature = currentFeature();
       const appID = $("appidInput").value.trim();
       if (!endpoint) {
         setResult("当前没有可调用能力。", "缺少能力", true);
@@ -1248,7 +1249,10 @@
       }
 
       const isOAuth = endpoint.toLowerCase() === "oauth";
-      const body = isOAuth
+      const isQRCodeAuth = feature?.name === "qrcodeauth";
+      const body = isQRCodeAuth
+        ? undefined
+        : isOAuth
         ? {
             ref: String(account.id),
             appid: appID,
@@ -1280,7 +1284,7 @@
       button.disabled = true;
       const startedAt = performance.now();
       setResult("调用中，首次调用可能需要建立会话。", "请求进行中", false);
-      setActivity(`正在调用 ${endpoint}：${accountName(account)}`);
+      setActivity(`正在调用 ${endpoint}${account ? `：${accountName(account)}` : ""}`);
 
       try {
         const result = await api("POST", feature?.route || (isOAuth ? "/wx/oauth" : `/wxapp/${endpoint}`), body);
