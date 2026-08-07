@@ -11,7 +11,6 @@
 - Web 控制台可选配置青龙 OpenAPI，保存前自动测试连接且不会回传 Client Secret 明文
 - Web 控制台管理账号并复制 OpenID
 - 提供 `/wx/*` 和 `/wxapp/*` 两套兼容接口：小程序 code、用户信息、手机号、加密 Key、云函数、二维码授权、文章会话/扩展数据/点赞
-- `/wx/oauth` 优先使用本地协议获取公众号 OAuth code，并可选配置兼容上游作为失败回退；不会再把空 code 当作成功
 - 应用宝短期凭据接近失效时由后台任务主动续期，业务调用失败时也会按需续期
 - SQLite 持久化账号与协议会话
 - Nginx Basic Auth 保护公开的 Web 入口
@@ -146,28 +145,6 @@ curl -X POST http://yyb-go:8000/accounts/refresh \
 ```
 
 Web 控制台内还提供完整的 OpenAPI 文档入口。
-
-## 公众号 OAuth code
-
-`POST /wx/oauth` 会先尝试本地应用宝协议。只有本地协议经过会话刷新后仍失败，才会调用一次可选上游，避免重复请求或重复扣费。成功响应中的 `oauth_provider` 为 `native` 或 `upstream`；两条路径都必须返回非空 `code` 才算成功。
-
-如需接入兼容服务，在 `.env` 中配置：
-
-```dotenv
-YYB_OAUTH_UPSTREAM_URL=http://example.com:8888
-YYB_OAUTH_UPSTREAM_API_KEY=sk-your-api-key
-YYB_OAUTH_UPSTREAM_OPENID=上游平台绑定账号的OpenID
-```
-
-`YYB_OAUTH_UPSTREAM_URL` 可以填写服务根地址或完整的 `/wx/oauth` 地址。API Key 仅在服务端请求头中使用，不会进入接口响应或日志。
-
-本地 YYB 和上游平台由不同微信应用获取账号标识时，同一个微信的 OpenID 也可能不同。多账号请用 JSON 映射本地账号 ID（或本地 OpenID）到上游 OpenID，并留空 `YYB_OAUTH_UPSTREAM_OPENID`：
-
-```dotenv
-YYB_OAUTH_UPSTREAM_OPENID_MAP={"1":"上游OpenID-A","3":"上游OpenID-B"}
-```
-
-上游属于独立第三方服务，其额度、稳定性和数据处理规则不由本项目控制。未配置上游时不影响原生协议和其他 `/wx/*` 接口。
 
 ## 账号运行管理
 

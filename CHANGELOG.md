@@ -4,7 +4,6 @@
 
 ## 2026-08-06
 
-- [7434441](https://github.com/525815266/YYB-Go-Enhanced/commit/7434441) 完善公众号 OAuth 授权码获取：接入命令 2909 的原生 GetA8Key 尝试，不再将 `code: null` 当作成功；支持可选 `/wx/oauth` 兼容上游回退、单/多账号 OpenID 映射，并返回明确的协议、额度或上游服务错误。
 - [7408e0b](https://github.com/525815266/YYB-Go-Enhanced/commit/7408e0b) 将二维码授权加入首页“调用配置”，不选账号也可直接创建授权会话。
 - [7ec2917](https://github.com/525815266/YYB-Go-Enhanced/commit/7ec2917) 新增截图所示的 `/wx/*` 兼容接口：`/wx/code`、`/wx/getuserinfo`、`/wx/encryptkey`、`/wx/getphonenumber`、`/wx/cloud`、`/wx/qrcodeauth`、`/wx/mpgeta8key`、`/wx/appmsgext` 和 `/wx/appmsglike`；其中云函数及文章相关接口复用 `operateWxData`，不会伪造微信结果。
 - [a89cb04](https://github.com/525815266/YYB-Go-Enhanced/commit/a89cb04) 将公众号网页授权并入首页“调用配置”。选择“公众号网页授权”后，可填写公众号 AppID、回调地址、授权范围和 State，并生成官方 OAuth 授权链接。
@@ -36,4 +35,4 @@
 
 ## 当前边界
 
-公众号 OAuth 功能用于获取网页授权 `code`，不是登录微信公众号后台。原生 TDI 封包仍受不同应用宝/微信版本兼容性影响；配置的兼容上游属于独立第三方服务，其额度、稳定性和数据处理规则不由本项目控制。
+公众号功能是网页 OAuth 授权链接生成，不是微信公众号后台登录。公众号后台需要其官方管理员登录；OAuth 授权成功后的 `code` 会回调到公众号后台配置的授权域名。

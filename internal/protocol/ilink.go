@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
-	"time"
 )
 
 const (
@@ -23,7 +22,6 @@ const (
 	jsLoginCmdID = 1029
 	phoneCmdID   = 1020
 	operateCmdID = 1133
-	mpGetA8KeyID = 2909
 
 	sessClientVer = 1661404927
 )
@@ -40,7 +38,6 @@ var (
 	jsLoginURL        = []byte("/cgi-bin/mmbiz-bin/js-login")
 	phoneURL          = []byte("/cgi-bin/mmbiz-bin/js-getuserwxphone")
 	operateURL        = []byte("/cgi-bin/mmbiz-bin/js-operatewxdata")
-	mpGetA8KeyURL     = []byte("/ilink/ilinkapp/mm/ilinkmpgeta8key")
 	windowsPlugin     = []byte("WindowsxWebPlugin")
 	windowsName       = []byte("Windows")
 	unifiedPCWindows  = []byte("UnifiedPCWindows")
@@ -416,22 +413,18 @@ func sessionWpkgHead(uin int64, f9, deviceID []byte) []byte {
 }
 
 func buildTransferPacket(session AppSession, plaintext []byte) ([]byte, error) {
-	return buildSessionPacket(session, transferURL, transferCmd, plaintext)
-}
-
-func buildSessionPacket(session AppSession, endpoint []byte, cmdID uint32, plaintext []byte) ([]byte, error) {
 	enc, err := aesGCMEncryptLayout(session.SendKey, nil, lz4AllLiteral(plaintext))
 	if err != nil {
 		return nil, err
 	}
 	wpkg := sessionWpkgHead(session.UIN, session.F9, session.DeviceID)
 	innerBody := append(wpkg, enc...)
-	inner := buildShortlink(cmdID, 0, innerBody, defaultVer)
-	env := make([]byte, 0, 2+len(endpoint)+2+len(transferHost)+4+len(inner))
+	inner := buildShortlink(transferCmd, 0, innerBody, defaultVer)
+	env := make([]byte, 0, 2+len(transferURL)+2+len(transferHost)+4+len(inner))
 	var tmp [4]byte
-	binary.BigEndian.PutUint16(tmp[:2], uint16(len(endpoint)))
+	binary.BigEndian.PutUint16(tmp[:2], uint16(len(transferURL)))
 	env = append(env, tmp[:2]...)
-	env = append(env, endpoint...)
+	env = append(env, transferURL...)
 	binary.BigEndian.PutUint16(tmp[:2], uint16(len(transferHost)))
 	env = append(env, tmp[:2]...)
 	env = append(env, transferHost...)
@@ -444,32 +437,12 @@ func buildSessionPacket(session AppSession, endpoint []byte, cmdID uint32, plain
 	return out, nil
 }
 
-func buildMPGetA8KeyRequest(appID, scope, state, requestURL string, scene uint64) []byte {
-	request := make([]byte, 0, len(requestURL)+160)
-	request = append(request, pbVar(2, 2)...)
-	if appID != "" {
-		request = append(request, pbLen(4, pbLen(1, []byte(appID)))...)
-	}
-	if scope != "" {
-		request = append(request, pbLen(5, pbLen(1, []byte(scope)))...)
-	}
-	if state != "" {
-		request = append(request, pbLen(6, pbLen(1, []byte(state)))...)
-	}
-	request = append(request, pbLen(7, pbLen(1, []byte(requestURL)))...)
-	request = append(request, pbVar(10, scene)...)
-	request = append(request, pbVar(14, 2)...)
-	request = append(request, pbLen(17, []byte("WIFI"))...)
-	request = append(request, pbVar(20, uint64(uint32(time.Now().Unix())))...)
-	return request
-}
-
 func sessionDecrypt(body, recvKey []byte) ([]byte, error) {
 	offsets := []int{}
 	if _, _, hlen, err := decodeWpkgHead(body); err == nil {
 		offsets = append(offsets, hlen)
 	}
-	limit := len(body) - 28
+	limit := min(len(body), 220)
 	for i := 0; i < limit; i++ {
 		offsets = append(offsets, i)
 	}

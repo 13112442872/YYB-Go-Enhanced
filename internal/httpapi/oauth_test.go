@@ -10,32 +10,18 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"yyb_go/internal/store"
 )
 
-func TestPublicOAuthReturnsProtocolCode(t *testing.T) {
+func TestPublicOAuthReturnsAuthorizationURL(t *testing.T) {
 	t.Setenv("GIN_MODE", "test")
 	app, err := NewApp(Config{ResourceRoot: t.TempDir(), RequestTimeout: time.Second, QRSessionTTL: time.Minute})
 	if err != nil {
 		t.Fatal(err)
 	}
-	app.authorizeOAuth = func(_ context.Context, _ *store.WechatAccount, appID, scope, state, requestURL string) (map[string]any, error) {
-		if appID != "wx1234567890abcdef" || scope != "snsapi_base" || state == "" || !strings.Contains(requestURL, "#wechat_redirect") {
-			t.Fatalf("unexpected protocol request: appid=%q scope=%q state=%q url=%q", appID, scope, state, requestURL)
-		}
-		return map[string]any{
-			"code": "oauth-code", "url": "https://example.com/callback?code=oauth-code", "full_url": "https://example.com/callback?code=oauth-code",
-		}, nil
-	}
 	defer app.Close()
 	status := "alive"
 	account, err := app.db.UpsertAccount(context.Background(), "openid-oauth-test", "login-buffer", nil, nil, nil, nil, nil, &status)
 	if err != nil {
-		t.Fatal(err)
-	}
-	uin := int64(123)
-	if err := app.db.PutSession(context.Background(), account.ID, &uin, map[string]any{"test": true}, time.Now().Add(time.Minute).Unix(), ""); err != nil {
 		t.Fatal(err)
 	}
 
@@ -56,7 +42,7 @@ func TestPublicOAuthReturnsProtocolCode(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)
 	}
-	if response.Code != 0 || response.Data.Code == nil || *response.Data.Code != "oauth-code" || response.Data.State == "" || !strings.Contains(response.Data.FullURL, "code=oauth-code") {
+	if response.Code != 0 || response.Data.Code != nil || response.Data.State == "" || !strings.Contains(response.Data.FullURL, "#wechat_redirect") {
 		t.Fatalf("unexpected OAuth response: %#v", response)
 	}
 }

@@ -24,25 +24,21 @@ import (
 )
 
 type Config struct {
-	ResourceRoot           string
-	DBFilename             string
-	TCPProxy               string
-	SessionTTL             time.Duration
-	RequestTimeout         time.Duration
-	AvatarTimeout          time.Duration
-	ScanTimeout            time.Duration
-	QRSessionTTL           time.Duration
-	KeepAliveInterval      time.Duration
-	KeepAliveAhead         time.Duration
-	QingLongURL            string
-	QingLongClientID       string
-	QingLongSecret         string
-	QingLongServer         string
-	QingLongRepo           string
-	OAuthUpstreamURL       string
-	OAuthUpstreamAPIKey    string
-	OAuthUpstreamOpenID    string
-	OAuthUpstreamOpenIDMap string
+	ResourceRoot      string
+	DBFilename        string
+	TCPProxy          string
+	SessionTTL        time.Duration
+	RequestTimeout    time.Duration
+	AvatarTimeout     time.Duration
+	ScanTimeout       time.Duration
+	QRSessionTTL      time.Duration
+	KeepAliveInterval time.Duration
+	KeepAliveAhead    time.Duration
+	QingLongURL       string
+	QingLongClientID  string
+	QingLongSecret    string
+	QingLongServer    string
+	QingLongRepo      string
 }
 
 type App struct {
@@ -54,8 +50,6 @@ type App struct {
 	refreshLoginBuffer func(context.Context, protocol.LoginBufferCredentials) (protocol.LoginBufferResult, error)
 	exchangeAuthCode   func(context.Context, string) (protocol.LoginBufferResult, error)
 	fetchUserInfo      func(context.Context, protocol.LoginBufferCredentials) (map[string]any, error)
-	authorizeOAuth     func(context.Context, *store.WechatAccount, string, string, string, string) (map[string]any, error)
-	oauthUpstream      *oauthUpstreamClient
 	qinglong           *qingLongClient
 
 	mu            sync.Mutex
@@ -130,11 +124,6 @@ func NewApp(cfg Config) (*App, error) {
 	poolCfg.TCPProxy = cfg.TCPProxy
 	pool := protocol.NewPool(poolCfg, db)
 	qrClient := qr.NewClient(cfg.RequestTimeout)
-	oauthUpstream, err := newOAuthUpstreamClient(cfg)
-	if err != nil {
-		_ = db.Close()
-		return nil, err
-	}
 	app := &App{
 		cfg:                cfg,
 		resources:          res,
@@ -144,13 +133,9 @@ func NewApp(cfg Config) (*App, error) {
 		refreshLoginBuffer: qrClient.RefreshLoginBuffer,
 		exchangeAuthCode:   qrClient.GetLoginBufferFromCode,
 		fetchUserInfo:      qrClient.LoginBuffers().FetchUserInfo,
-		authorizeOAuth: func(ctx context.Context, acc *store.WechatAccount, appID, scope, state, requestURL string) (map[string]any, error) {
-			return pool.AuthorizePublicAccount(ctx, acc.LoginBuffer, appID, scope, state, requestURL, acc.ID, cfg.TCPProxy)
-		},
-		oauthUpstream: oauthUpstream,
-		qinglong:      newQingLongClient(cfg.QingLongURL, cfg.QingLongClientID, cfg.QingLongSecret, cfg.RequestTimeout),
-		qrSessions:    map[string]*qr.Session{},
-		quickSessions: map[string]quickLoginSession{},
+		qinglong:           newQingLongClient(cfg.QingLongURL, cfg.QingLongClientID, cfg.QingLongSecret, cfg.RequestTimeout),
+		qrSessions:         map[string]*qr.Session{},
+		quickSessions:      map[string]quickLoginSession{},
 	}
 	app.startKeepAlive()
 	return app, nil
