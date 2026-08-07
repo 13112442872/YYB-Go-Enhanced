@@ -39,6 +39,7 @@ func newFakeQingLong(t *testing.T) (*fakeQingLong, *httptest.Server) {
 		crons: []qingLongCron{
 			{ID: 1, Name: "美的会员", Command: "task SuperNaiBA_YYB-GO-Script/MDHY.js", Schedule: "11 8 * * *", Status: 1, IsDisabled: intPointer(1)},
 			{ID: 2, Name: "EOOS", Command: "task SuperNaiBA_YYB-GO-Script/eoos/eoos_checkin.py", Schedule: "30 8 * * *", Status: 1, IsDisabled: intPointer(1)},
+			{ID: 3, Name: "DT生活", Command: "task 525815266_YYB-Go-Enhanced/scripts/DTSH.py", Schedule: "48 15 * * *", Status: 1, IsDisabled: intPointer(1)},
 		},
 	}
 	server := httptest.NewServer(http.HandlerFunc(fake.serveHTTP))
@@ -188,7 +189,7 @@ func newRunsTestApp(t *testing.T, qlURL string) (*App, http.Handler, string) {
 		QingLongClientID: "client-id",
 		QingLongSecret:   "client-secret",
 		QingLongServer:   "yyb-go:8000",
-		QingLongRepo:     "SuperNaiBA_YYB-GO-Script",
+		QingLongRepo:     "SuperNaiBA_YYB-GO-Script,525815266_YYB-Go-Enhanced/scripts",
 	})
 	if err != nil {
 		t.Fatalf("NewApp() error = %v", err)
@@ -200,6 +201,41 @@ func newRunsTestApp(t *testing.T, qlURL string) (*App, http.Handler, string) {
 		t.Fatalf("seed account: %v", err)
 	}
 	return app, app.Handler(), fmt.Sprintf("%d", acc.ID)
+}
+
+func TestEnhancedRepoScriptsKeepTheirSourcePath(t *testing.T) {
+	fake, server := newFakeQingLong(t)
+	_, handler, ref := newRunsTestApp(t, server.URL)
+
+	list := apiRequest(t, handler, http.MethodGet, "/api/qinglong/jobs?ref="+url.QueryEscape(ref), nil)
+	if list.Code != http.StatusOK || !strings.Contains(list.Body.String(), "DTSH.py") {
+		t.Fatalf("enhanced repo script missing: %d %s", list.Code, list.Body.String())
+	}
+
+	enable := apiRequest(t, handler, http.MethodPut, "/api/qinglong/jobs/enable", map[string]any{
+		"ref": ref, "script_key": "DTSH.py", "enabled": true,
+	})
+	if enable.Code != http.StatusOK {
+		t.Fatalf("enable response = %d %s", enable.Code, enable.Body.String())
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if got := fake.commands[len(fake.commands)-1]; got != "task 525815266_YYB-Go-Enhanced/scripts/DTSH.py" {
+		t.Fatalf("managed command = %q", got)
+	}
+}
+
+func TestQingLongRepoRoots(t *testing.T) {
+	repos, err := qingLongRepoRoots(" SuperNaiBA_YYB-GO-Script,525815266_YYB-Go-Enhanced/scripts;SuperNaiBA_YYB-GO-Script ")
+	if err != nil {
+		t.Fatalf("qingLongRepoRoots() error = %v", err)
+	}
+	if got := strings.Join(repos, ","); got != "SuperNaiBA_YYB-GO-Script,525815266_YYB-Go-Enhanced/scripts" {
+		t.Fatalf("repos = %q", got)
+	}
+	if _, err := qingLongRepoRoots("../scripts"); err == nil {
+		t.Fatal("invalid repository path was accepted")
+	}
 }
 
 func apiRequest(t *testing.T, handler http.Handler, method, path string, body any) *httptest.ResponseRecorder {

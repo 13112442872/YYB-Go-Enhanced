@@ -23,6 +23,7 @@ type scriptSource struct {
 	Key      string
 	Name     string
 	Schedule string
+	TaskRoot string
 	Cron     qingLongCron
 }
 
@@ -420,26 +421,31 @@ func (a *App) scriptCatalog(ctx context.Context) ([]scriptSource, map[int64]qing
 	if !a.qinglong.configured() {
 		return nil, nil, fmt.Errorf("青龙 OpenAPI 未配置")
 	}
-	crons, err := a.qinglong.listCrons(ctx, a.cfg.QingLongRepo)
+	repos, err := qingLongRepoRoots(a.cfg.QingLongRepo)
 	if err != nil {
 		return nil, nil, err
 	}
-	prefix := "task " + a.cfg.QingLongRepo + "/"
 	byKey := make(map[string]scriptSource)
-	byID := make(map[int64]qingLongCron, len(crons))
-	for _, cron := range crons {
-		byID[cron.ID] = cron
-		if strings.HasPrefix(cron.Name, "[YYB:") {
-			continue
+	byID := make(map[int64]qingLongCron)
+	for _, repo := range repos {
+		crons, err := a.qinglong.listCrons(ctx, repo)
+		if err != nil {
+			return nil, nil, err
 		}
-		if !strings.HasPrefix(cron.Command, prefix) {
-			continue
+		prefix := "task " + repo + "/"
+		for _, cron := range crons {
+			byID[cron.ID] = cron
+			if strings.HasPrefix(cron.Name, "[YYB:") || !strings.HasPrefix(cron.Command, prefix) {
+				continue
+			}
+			key := strings.TrimSpace(strings.TrimPrefix(cron.Command, prefix))
+			if !validScriptKey.MatchString(key) || key == "eoos/eoos_checkin.py" || key == "SendNotify.py" {
+				continue
+			}
+			if _, exists := byKey[key]; !exists {
+				byKey[key] = scriptSource{Key: key, Name: cron.Name, Schedule: cron.Schedule, TaskRoot: repo, Cron: cron}
+			}
 		}
-		key := strings.TrimSpace(strings.TrimPrefix(cron.Command, prefix))
-		if !validScriptKey.MatchString(key) || key == "eoos/eoos_checkin.py" || key == "SendNotify.py" {
-			continue
-		}
-		byKey[key] = scriptSource{Key: key, Name: cron.Name, Schedule: cron.Schedule, Cron: cron}
 	}
 	out := make([]scriptSource, 0, len(byKey))
 	for _, source := range byKey {
@@ -472,7 +478,7 @@ func (a *App) ensureAccountJob(ctx context.Context, acc *store.WechatAccount, sc
 	if err != nil {
 		return nil, scriptSource{}, err
 	}
-	command, taskBefore, err := a.accountTaskSpec(acc.ID, scriptKey, setting)
+	command, taskBefore, err := a.accountTaskSpec(acc.ID, source.TaskRoot, scriptKey, setting)
 	if err != nil {
 		return nil, scriptSource{}, err
 	}
@@ -514,14 +520,14 @@ func managedLogName(accountID int64, scriptKey string) string {
 	return fmt.Sprintf("yyb_account_%d_%x", accountID, sum[:6])
 }
 
-func (a *App) accountTaskSpec(accountID int64, scriptKey string, setting *store.AccountPushSetting) (string, string, error) {
+func (a *App) accountTaskSpec(accountID int64, taskRoot, scriptKey string, setting *store.AccountPushSetting) (string, string, error) {
 	if !validScriptKey.MatchString(scriptKey) {
 		return "", "", fmt.Errorf("脚本路径不合法")
 	}
 	if !regexp.MustCompile(`^[A-Za-z0-9_.:-]+$`).MatchString(a.cfg.QingLongServer) {
 		return "", "", fmt.Errorf("YYB_QINGLONG_SERVER 格式不合法")
 	}
-	if !regexp.MustCompile(`^[A-Za-z0-9_.-]+$`).MatchString(a.cfg.QingLongRepo) {
+	if !validQingLongTaskRoot(taskRoot) {
 		return "", "", fmt.Errorf("YYB_QINGLONG_REPO 格式不合法")
 	}
 	pushKey, pushPlusToken, pushPlusTopic, qywxKey := "''", "''", "''", "''"
@@ -536,12 +542,50 @@ func (a *App) accountTaskSpec(accountID int64, scriptKey string, setting *store.
 	case "qywx":
 		qywxKey = envReference(setting.TokenEnvName)
 	}
-	command := fmt.Sprintf("task %s/%s", a.cfg.QingLongRepo, scriptKey)
+	command := fmt.Sprintf("task %s/%s", taskRoot, scriptKey)
 	taskBefore := fmt.Sprintf(
 		"export YYB_SERVER='%s@%d'; export PUSH_KEY=%s; export PUSH_PLUS_TOKEN=%s; export PUSH_PLUS_USER=%s; export QYWX_KEY=%s",
 		a.cfg.QingLongServer, accountID, pushKey, pushPlusToken, pushPlusTopic, qywxKey,
 	)
 	return command, taskBefore, nil
+}
+
+func qingLongRepoRoots(raw string) ([]string, error) {
+	parts := strings.FieldsFunc(raw, func(r rune) bool {
+		return r == ',' || r == ';' || r == '\n' || r == '\r'
+	})
+	seen := make(map[string]struct{}, len(parts))
+	repos := make([]string, 0, len(parts))
+	for _, part := range parts {
+		repo := strings.Trim(strings.TrimSpace(part), "/")
+		if repo == "" {
+			continue
+		}
+		if !validQingLongTaskRoot(repo) {
+			return nil, fmt.Errorf("YYB_QINGLONG_REPO 格式不合法: %s", repo)
+		}
+		if _, exists := seen[repo]; exists {
+			continue
+		}
+		seen[repo] = struct{}{}
+		repos = append(repos, repo)
+	}
+	if len(repos) == 0 {
+		return nil, fmt.Errorf("YYB_QINGLONG_REPO 未配置")
+	}
+	return repos, nil
+}
+
+func validQingLongTaskRoot(root string) bool {
+	if !regexp.MustCompile(`^[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*$`).MatchString(root) {
+		return false
+	}
+	for _, segment := range strings.Split(root, "/") {
+		if segment == "." || segment == ".." {
+			return false
+		}
+	}
+	return true
 }
 
 func envReference(name string) string {
@@ -656,7 +700,7 @@ func (a *App) refreshAccountJobCommands(ctx context.Context, acc *store.WechatAc
 		if _, cronExists := cronsByID[job.QLCronID]; !sourceExists || !cronExists {
 			continue
 		}
-		command, taskBefore, err := a.accountTaskSpec(acc.ID, job.ScriptKey, setting)
+		command, taskBefore, err := a.accountTaskSpec(acc.ID, source.TaskRoot, job.ScriptKey, setting)
 		if err != nil {
 			return err
 		}

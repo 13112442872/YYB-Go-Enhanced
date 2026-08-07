@@ -94,7 +94,7 @@ func NewApp(cfg Config) (*App, error) {
 		cfg.QingLongServer = "yyb-go:8000"
 	}
 	if cfg.QingLongRepo == "" {
-		cfg.QingLongRepo = "SuperNaiBA_YYB-GO-Script"
+		cfg.QingLongRepo = "SuperNaiBA_YYB-GO-Script,525815266_YYB-Go-Enhanced/scripts"
 	}
 	res, err := ensureResources(cfg.ResourceRoot)
 	if err != nil {
