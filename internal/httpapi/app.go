@@ -34,6 +34,7 @@ type Config struct {
 	QRSessionTTL      time.Duration
 	KeepAliveInterval time.Duration
 	KeepAliveAhead    time.Duration
+	QingLongType      string
 	QingLongURL       string
 	QingLongClientID  string
 	QingLongSecret    string
@@ -115,6 +116,7 @@ func NewApp(cfg Config) (*App, error) {
 		}
 		return fallback
 	}
+	cfg.QingLongType = loadSetting(qingLongTypeSetting, cfg.QingLongType)
 	cfg.QingLongURL = loadSetting(qingLongURLSetting, cfg.QingLongURL)
 	cfg.QingLongClientID = loadSetting(qingLongClientIDSetting, cfg.QingLongClientID)
 	cfg.QingLongSecret = loadSetting(qingLongSecretSetting, cfg.QingLongSecret)
@@ -133,7 +135,7 @@ func NewApp(cfg Config) (*App, error) {
 		refreshLoginBuffer: qrClient.RefreshLoginBuffer,
 		exchangeAuthCode:   qrClient.GetLoginBufferFromCode,
 		fetchUserInfo:      qrClient.LoginBuffers().FetchUserInfo,
-		qinglong:           newQingLongClient(cfg.QingLongURL, cfg.QingLongClientID, cfg.QingLongSecret, cfg.RequestTimeout),
+		qinglong:           newQingLongClient(cfg.QingLongType, cfg.QingLongURL, cfg.QingLongClientID, cfg.QingLongSecret, cfg.RequestTimeout),
 		qrSessions:         map[string]*qr.Session{},
 		quickSessions:      map[string]quickLoginSession{},
 	}

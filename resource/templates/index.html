@@ -823,18 +823,25 @@
               </a>
             </div>
             <details class="integration" id="qingLongSettings">
-              <summary>青龙连接设置</summary>
+              <summary id="panelSettingsSummary">面板连接设置（青龙 / 呆呆面板）</summary>
               <div class="form-grid">
                 <div class="field">
-                  <label for="qingLongURL">青龙地址</label>
+                  <label for="qingLongType">面板类型</label>
+                  <select class="input" id="qingLongType" onchange="updatePanelLabels()">
+                    <option value="qinglong">青龙面板 (Qinglong)</option>
+                    <option value="daidai">呆呆面板 (daidai-panel)</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="qingLongURL" id="labelPanelURL">面板地址</label>
                   <input class="input" id="qingLongURL" placeholder="http://qinglong:5700" autocomplete="url">
                 </div>
                 <div class="field">
-                  <label for="qingLongClientID">Client ID</label>
+                  <label for="qingLongClientID" id="labelClientID">Client ID / App Key</label>
                   <input class="input" id="qingLongClientID" autocomplete="off">
                 </div>
                 <div class="field">
-                  <label for="qingLongSecret">Client Secret</label>
+                  <label for="qingLongSecret" id="labelClientSecret">Client Secret / App Secret</label>
                   <input class="input" id="qingLongSecret" type="password" autocomplete="new-password">
                   <span class="field-note" id="qingLongSecretNote">保存时会先测试连接</span>
                 </div>
@@ -1083,16 +1090,34 @@
       renderFeatures();
     }
 
+    function updatePanelLabels() {
+      const type = $("qingLongType").value;
+      if (type === "daidai") {
+        $("labelPanelURL").textContent = "呆呆面板地址";
+        $("qingLongURL").placeholder = "http://daidai-panel:5700";
+        $("labelClientID").textContent = "App Key";
+        $("labelClientSecret").textContent = "App Secret";
+      } else {
+        $("labelPanelURL").textContent = "青龙地址";
+        $("qingLongURL").placeholder = "http://qinglong:5700";
+        $("labelClientID").textContent = "Client ID";
+        $("labelClientSecret").textContent = "Client Secret";
+      }
+    }
+
     async function loadQingLongConfig() {
       try {
         const config = await api("GET", "/api/qinglong/config");
+        $("qingLongType").value = config.type || "qinglong";
+        updatePanelLabels();
         $("qingLongURL").value = config.url || "";
         $("qingLongClientID").value = config.client_id || "";
         $("qingLongSecret").value = "";
-        $("qingLongSecret").placeholder = config.secret_configured ? "已配置，留空表示保留" : "请输入 Client Secret";
+        const secretLabel = config.type === "daidai" ? "App Secret" : "Client Secret";
+        $("qingLongSecret").placeholder = config.secret_configured ? "已配置，留空表示保留" : `请输入 ${secretLabel}`;
         $("qingLongSecretNote").textContent = config.configured ? "连接参数已保存；修改时会先测试连接" : "尚未配置；保存时会先测试连接";
       } catch (error) {
-        setActivity(`读取青龙配置失败：${error.message}`);
+        setActivity(`读取面板配置失败：${error.message}`);
       }
     }
 
@@ -1125,9 +1150,10 @@
         state.accounts[index] = saved.account;
         const result = await api("POST", "/api/qinglong/sync", { ref: String(account.id) });
         renderAccounts();
-        setActivity(result.added ? `账号 ${account.id} 已添加到青龙 YYB_SERVER` : `青龙 YYB_SERVER 已包含账号 ${account.id}`);
+        const panelName = $("qingLongType").value === "daidai" ? "呆呆面板" : "青龙";
+        setActivity(result.added ? `账号 ${account.id} 已添加到${panelName} YYB_SERVER` : `${panelName} YYB_SERVER 已包含账号 ${account.id}`);
       } catch (error) {
-        setActivity(`同步青龙失败：${error.message}`);
+        setActivity(`同步面板失败：${error.message}`);
         if (error.message.includes("配置")) $("qingLongSettings").open = true;
       } finally {
         button.disabled = false;
@@ -1142,7 +1168,7 @@
         `确认删除账号 ${label}？\n\n` +
         `将同时删除：\n` +
         `1. YYB 中该账号及登录态\n` +
-        `2. 青龙 YYB_SERVER 中匹配该 ID/OpenID 的条目\n` +
+        `2. 面板 YYB_SERVER 中匹配该 ID/OpenID 的条目\n` +
         `3. YYB 为该账号创建的专属任务\n\n` +
         `其他账号、手工维护的内容和公共任务不会删除。此操作不可撤销。`
       );
@@ -1156,8 +1182,8 @@
         state.selectedOpenID = "";
         await loadAccounts();
         const cleanup = result.qinglong_cleanup === "skipped"
-          ? "青龙未配置，已跳过关联清理"
-          : `已清理青龙环境条目 ${result.env_entries_removed} 条、专属任务 ${result.tasks_deleted} 个`;
+          ? "面板未配置，已跳过关联清理"
+          : `已清理面板环境条目 ${result.env_entries_removed} 条、专属任务 ${result.tasks_deleted} 个`;
         setActivity(`账号 ${label} 已删除；${cleanup}`);
       } catch (error) {
         setActivity(`账号删除失败：${error.data?.detail || error.message}`);
@@ -1172,11 +1198,12 @@
       button.disabled = true;
       button.textContent = "正在测试";
       try {
-        await api("PUT", "/api/qinglong/config", { url: $("qingLongURL").value, client_id: $("qingLongClientID").value, client_secret: $("qingLongSecret").value });
+        await api("PUT", "/api/qinglong/config", { type: $("qingLongType").value, url: $("qingLongURL").value, client_id: $("qingLongClientID").value, client_secret: $("qingLongSecret").value });
         await loadQingLongConfig();
-        setActivity("青龙连接测试成功，配置已保存");
+        const panelName = $("qingLongType").value === "daidai" ? "呆呆面板" : "青龙";
+        setActivity(`${panelName}连接测试成功，配置已保存`);
       } catch (error) {
-        setActivity(`青龙配置保存失败：${error.message}`);
+        setActivity(`面板配置保存失败：${error.message}`);
       } finally {
         button.disabled = false;
         button.textContent = "测试并保存";
@@ -1189,9 +1216,9 @@
       try {
         await api("PUT", "/api/qinglong/config", { clear: true });
         await loadQingLongConfig();
-        setActivity("青龙连接配置已清除");
+        setActivity("面板连接配置已清除");
       } catch (error) {
-        setActivity(`清除青龙配置失败：${error.message}`);
+        setActivity(`清除面板配置失败：${error.message}`);
       } finally {
         button.disabled = false;
       }

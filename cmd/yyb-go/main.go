@@ -36,9 +36,10 @@ func main() {
 		QRSessionTTL:      5 * time.Minute,
 		KeepAliveInterval: *keepAliveInterval,
 		KeepAliveAhead:    *keepAliveAhead,
-		QingLongURL:       os.Getenv("QL_URL"),
-		QingLongClientID:  os.Getenv("QL_CLIENT_ID"),
-		QingLongSecret:    os.Getenv("QL_CLIENT_SECRET"),
+		QingLongType:      getEnvWithFallback("PANEL_TYPE", "YYB_PANEL_TYPE", "QL_TYPE"),
+		QingLongURL:       getEnvWithFallback("QL_URL", "DAIDAI_URL"),
+		QingLongClientID:  getEnvWithFallback("QL_CLIENT_ID", "DAIDAI_APP_KEY"),
+		QingLongSecret:    getEnvWithFallback("QL_CLIENT_SECRET", "DAIDAI_APP_SECRET"),
 		QingLongServer:    os.Getenv("YYB_QINGLONG_SERVER"),
 		QingLongRepo:      os.Getenv("YYB_QINGLONG_REPO"),
 	}
@@ -71,3 +72,13 @@ func main() {
 	defer cancel()
 	_ = srv.Shutdown(ctx)
 }
+
+func getEnvWithFallback(keys ...string) string {
+	for _, key := range keys {
+		if val := os.Getenv(key); val != "" {
+			return val
+		}
+	}
+	return ""
+}
+

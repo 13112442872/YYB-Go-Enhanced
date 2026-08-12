@@ -443,7 +443,7 @@ func (a *App) scriptCatalog(ctx context.Context) ([]scriptSource, map[int64]qing
 				continue
 			}
 			if _, exists := byKey[key]; !exists {
-				byKey[key] = scriptSource{Key: key, Name: cron.Name, Schedule: cron.Schedule, TaskRoot: repo, Cron: cron}
+				byKey[key] = scriptSource{Key: key, Name: cron.Name, Schedule: cron.getSchedule(), TaskRoot: repo, Cron: cron}
 			}
 		}
 	}
