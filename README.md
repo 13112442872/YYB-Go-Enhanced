@@ -7,8 +7,8 @@
 ## 功能
 
 - 支持本机微信快速授权和手机扫码添加账号，授权成功后显示账号 ID、OpenID 和存活状态
-- 扫码成功后可填写账号备注，并一键合并到青龙 `YYB_SERVER`，重复操作不会产生重复账号
-- Web 控制台可选配置青龙 OpenAPI，保存前自动测试连接且不会回传 Client Secret 明文
+- 扫码成功后可填写账号备注，并一键合并到面板 `YYB_SERVER`，重复操作不会产生重复账号
+- Web 控制台支持配置 **青龙面板** 与 **呆呆面板 (daidai-panel)** OpenAPI，支持自动识别与测试连接，且不会回传 Secret 明文
 - Web 控制台管理账号并复制 OpenID
 - 提供 `/wx/*` 和 `/wxapp/*` 两套兼容接口：小程序 code、用户信息、手机号、加密 Key、云函数、二维码授权、文章会话/扩展数据/点赞
 - 应用宝短期凭据接近失效时由后台任务主动续期，业务调用失败时也会按需续期
@@ -81,13 +81,24 @@ YYB_KEEPALIVE_AHEAD=45m
 
 将 `YYB_KEEPALIVE_INTERVAL` 设为 `0` 可关闭后台保活。提前续期遇到临时网络失败时会保留当前账号状态并在后续周期重试；凭据真正过期或 refresh token 被服务端撤销后仍然需要重新扫码。
 
-## 青龙接入
+## 青龙与呆呆面板接入
 
-可在 Web 控制台的“青龙连接设置”中填写地址、Client ID 和 Client Secret。配置会持久化到 YYB Go 的 SQLite 数据库并优先于容器环境变量；Client Secret 只用于服务端连接，读取配置时不会返回明文。
+支持对接 **青龙面板 (Qinglong)** 与 **呆呆面板 (daidai-panel)**：
 
-扫码成功页和账号控制台都提供“添加/同步到青龙”按钮。同步会保留 `YYB_SERVER` 中已有的多行内容和环境变量备注，只追加缺少的账号，并同时识别账号 ID 与 OpenID，避免重复添加。
+- **Web 控制台配置**：可在 Web 控制台的“面板连接设置”中选择【青龙面板】或【呆呆面板 (daidai-panel)】，填入面板地址与对应的鉴权凭据（青龙使用 `Client ID` / `Client Secret`；呆呆面板使用 `App Key` / `App Secret`）。配置会持久化到 SQLite 数据库并优先于容器环境变量。
+- **智能自动识别**：连接测试时若未指定或选错类型，系统会自动探测并尝试回退调用对方 OpenAPI，成功后自动识别并切换为正确的面板模式。
+- **环境变量配置**：
+  ```dotenv
+  PANEL_TYPE=daidai   # 可选 qinglong 或 daidai，默认 qinglong
+  QL_URL=http://daidai-panel:5700
+  QL_CLIENT_ID=你的呆呆面板AppKey
+  QL_CLIENT_SECRET=你的呆呆面板AppSecret
+  ```
+  *(注：呆呆面板也可直接使用 `DAIDAI_URL`、`DAIDAI_APP_KEY`、`DAIDAI_APP_SECRET`)*
 
-当青龙和本服务都连接到 `qinglong_default` 网络后，青龙环境变量可以填写：
+扫码成功页和账号控制台都提供“添加/同步到面板”按钮。同步会保留 `YYB_SERVER` 中已有的多行内容和环境变量备注，只追加缺少的账号，并同时识别账号 ID 与 OpenID，避免重复添加。
+
+当面板和本服务都连接到 `qinglong_default` 网络后，面板环境变量可以填写：
 
 ```text
 YYB_SERVER=yyb-go:8000@1
@@ -95,7 +106,7 @@ YYB_SERVER=yyb-go:8000@1
 
 `@` 后可以使用控制台显示的账号 ID 或 OpenID。账号 ID 是本地数据库编号，删除并重新添加账号后可能变化；OpenID 更适合长期配置。
 
-已确认报错的青龙脚本修复版收录在 [`scripts/`](scripts/README.md)。
+已确认报错的青龙/呆呆面板脚本修复版收录在 [`scripts/`](scripts/README.md)。
 
 ## API 示例
 
