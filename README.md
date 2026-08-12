@@ -49,6 +49,14 @@ docker compose up -d --build
 
 默认访问地址为 `http://服务器IP:8000`。登录用户名和密码由 `.env` 中的 `YYB_WEB_USER`、`YYB_WEB_PASSWORD` 决定。
 
+### GitHub Actions 自动与手动构建镜像
+
+项目已添加自动与手动构建 Docker 镜像的 Workflow (`.github/workflows/docker-publish.yml`)，支持打包发布到 **GitHub Container Registry (GHCR)**：
+
+- **手动触发构建**：在 GitHub 仓库页面进入 **Actions** -> 选择 **Build and Publish Docker Image** Workflow -> 点击 **Run workflow**，可自定义填入镜像 Tag（默认 `latest`）并一键构建发布。
+- **自动触发构建**：当推送分支到 `main` 或推送版本 Tag (如 `v1.0.0`) 时自动触发镜像构建。
+- **支持架构**：多架构支持 (`linux/amd64`, `linux/arm64`)。
+
 ## 本机微信快速授权
 
 在 Windows 电脑上打开 YYB Go 的“添加微信账号”页面时，页面会尝试连接当前电脑已登录的微信客户端。检测成功后，点击“使用本机微信授权”，在电脑微信中确认即可；不需要用手机扫描二维码。
