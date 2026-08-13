@@ -18,6 +18,7 @@ import (
 	"github.com/gin-gonic/gin"
 	httpSwagger "github.com/swaggo/http-swagger/v2"
 
+	"yyb_go/internal/auth"
 	"yyb_go/internal/protocol"
 	"yyb_go/internal/qr"
 	"yyb_go/internal/store"
@@ -40,6 +41,11 @@ type Config struct {
 	QingLongSecret    string
 	QingLongServer    string
 	QingLongRepo      string
+	AuthMySQLDSN      string
+	AdminUser         string
+	AdminPassword     string
+	CookieSecure      bool
+	SessionDuration   time.Duration
 }
 
 type App struct {
@@ -52,11 +58,14 @@ type App struct {
 	exchangeAuthCode   func(context.Context, string) (protocol.LoginBufferResult, error)
 	fetchUserInfo      func(context.Context, protocol.LoginBufferCredentials) (map[string]any, error)
 	qinglong           *qingLongClient
+	auth               *auth.Store
 
 	mu            sync.Mutex
 	qrSessions    map[string]*qr.Session
 	quickSessions map[string]quickLoginSession
 	refreshMu     sync.Mutex
+	loginMu       sync.Mutex
+	loginAttempts map[string]loginAttempt
 
 	keepAliveCancel context.CancelFunc
 	keepAliveDone   chan struct{}
@@ -96,6 +105,9 @@ func NewApp(cfg Config) (*App, error) {
 	}
 	if cfg.QingLongRepo == "" {
 		cfg.QingLongRepo = "SuperNaiBA_YYB-GO-Script,525815266_YYB-Go-Enhanced/scripts"
+	}
+	if cfg.SessionDuration <= 0 {
+		cfg.SessionDuration = 7 * 24 * time.Hour
 	}
 	res, err := ensureResources(cfg.ResourceRoot)
 	if err != nil {
@@ -138,6 +150,22 @@ func NewApp(cfg Config) (*App, error) {
 		qinglong:           newQingLongClient(cfg.QingLongType, cfg.QingLongURL, cfg.QingLongClientID, cfg.QingLongSecret, cfg.RequestTimeout),
 		qrSessions:         map[string]*qr.Session{},
 		quickSessions:      map[string]quickLoginSession{},
+		loginAttempts:      map[string]loginAttempt{},
+	}
+	if cfg.AuthMySQLDSN != "" {
+		authCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		authStore, authErr := auth.Open(authCtx, cfg.AuthMySQLDSN)
+		if authErr != nil {
+			_ = db.Close()
+			return nil, authErr
+		}
+		if authErr = authStore.BootstrapAdmin(authCtx, cfg.AdminUser, cfg.AdminPassword); authErr != nil {
+			_ = authStore.Close()
+			_ = db.Close()
+			return nil, fmt.Errorf("bootstrap admin: %w", authErr)
+		}
+		app.auth = authStore
 	}
 	app.startKeepAlive()
 	return app, nil
@@ -150,6 +178,9 @@ func (a *App) Close() error {
 		a.keepAliveCancel = nil
 	}
 	if a.db != nil {
+		if a.auth != nil {
+			_ = a.auth.Close()
+		}
 		return a.db.Close()
 	}
 	return nil
@@ -163,6 +194,41 @@ func (a *App) Handler() http.Handler {
 	router := gin.New()
 	router.Use(gin.Logger(), gin.Recovery())
 
+	router.Any("/login", gin.WrapF(a.handleLogin))
+	router.Any("/register", gin.WrapF(a.handleRegister))
+	router.Any("/logout", gin.WrapF(a.handleLogout))
+	router.Any("/health", func(c *gin.Context) {
+		writeJSON(c.Writer, http.StatusOK, gin.H{"ok": true})
+	})
+	router.StaticFS("/static", http.Dir(a.resources.Static))
+	// Existing automation clients must remain independent from browser sessions.
+	router.Any("/wx/oauth", gin.WrapF(a.handlePublicOAuth))
+	router.Any("/wxapp/getCode", gin.WrapF(a.handleGetCode))
+	router.Any("/wxapp/getPhoneNumber", gin.WrapF(a.handleGetPhoneNumber))
+	router.Any("/wxapp/operateWxData", gin.WrapF(a.handleOperateWXData))
+	router.Any("/wx/code", gin.WrapF(a.handleWXCodeAlias))
+	router.Any("/wx/getuserinfo", gin.WrapF(a.handleWXGetUserInfo))
+	router.Any("/wx/encryptkey", gin.WrapF(a.handleWXEncryptKey))
+	router.Any("/wx/getphonenumber", gin.WrapF(a.handleWXPhoneAlias))
+	router.Any("/wx/cloud", gin.WrapF(a.handleWXCloud))
+	router.Any("/wx/qrcodeauth", gin.WrapF(a.handleQRRoot))
+	router.Any("/wx/qrcodeauth/*path", gin.WrapF(a.handleQR))
+	router.Any("/wx/mpgeta8key", gin.WrapF(a.handleWXMPGetA8Key))
+	router.Any("/wx/appmsgext", gin.WrapF(a.handleWXAppMsgExt))
+	router.Any("/wx/appmsglike", gin.WrapF(a.handleWXAppMsgLike))
+	router.Any("/openapi.json", gin.WrapF(a.handleOpenAPI))
+
+	router.Use(a.requireBrowserSession())
+	router.Any("/settings", gin.WrapF(a.handleSettingsPage))
+	router.Any("/users", gin.WrapF(a.handleUsersPage))
+	router.Any("/api/auth/me", gin.WrapF(a.handleAuthMe))
+	router.Any("/api/auth/profile", gin.WrapF(a.handleProfile))
+	router.Any("/api/auth/password", gin.WrapF(a.handlePassword))
+	router.Any("/api/auth/sessions", gin.WrapF(a.handleSessions))
+	router.Any("/api/auth/users", gin.WrapF(a.handleUsers))
+	router.Any("/api/auth/users/*path", gin.WrapF(a.handleUserAction))
+	router.Any("/api/auth/registration", gin.WrapF(a.handleRegistrationSetting))
+	router.Use(a.requireAdminSession())
 	router.Any("/", gin.WrapF(a.handleIndex))
 	router.Any("/scan", gin.WrapF(a.handleScan))
 	router.Any("/runs", gin.WrapF(a.handleRuns))
@@ -170,11 +236,6 @@ func (a *App) Handler() http.Handler {
 		c.Redirect(http.StatusMovedPermanently, "/docs/index.html")
 	})
 	router.Any("/docs/*path", gin.WrapF(a.handleDocs))
-	router.Any("/openapi.json", gin.WrapF(a.handleOpenAPI))
-	router.Any("/health", func(c *gin.Context) {
-		writeJSON(c.Writer, http.StatusOK, gin.H{"ok": true})
-	})
-	router.StaticFS("/static", http.Dir(a.resources.Static))
 	router.Any("/qr", gin.WrapF(a.handleQRRoot))
 	router.Any("/qr/*path", gin.WrapF(a.handleQR))
 	router.Any("/quick-login", gin.WrapF(a.handleQuickLoginRoot))
@@ -194,22 +255,8 @@ func (a *App) Handler() http.Handler {
 	router.Any("/api/qinglong/runs", gin.WrapF(a.handleQingLongRuns))
 	router.Any("/api/qinglong/runs/log", gin.WrapF(a.handleQingLongRunLog))
 	router.Any("/api/qinglong/push", gin.WrapF(a.handleQingLongPush))
-	router.Any("/wx/oauth", gin.WrapF(a.handlePublicOAuth))
-	router.Any("/wxapp/getCode", gin.WrapF(a.handleGetCode))
-	router.Any("/wxapp/getPhoneNumber", gin.WrapF(a.handleGetPhoneNumber))
-	router.Any("/wxapp/operateWxData", gin.WrapF(a.handleOperateWXData))
 	// Keep the shorter /wx/* names used by existing YYB clients. The handlers
 	// share the same session and retry logic as the canonical /wxapp/* routes.
-	router.Any("/wx/code", gin.WrapF(a.handleWXCodeAlias))
-	router.Any("/wx/getuserinfo", gin.WrapF(a.handleWXGetUserInfo))
-	router.Any("/wx/encryptkey", gin.WrapF(a.handleWXEncryptKey))
-	router.Any("/wx/getphonenumber", gin.WrapF(a.handleWXPhoneAlias))
-	router.Any("/wx/cloud", gin.WrapF(a.handleWXCloud))
-	router.Any("/wx/qrcodeauth", gin.WrapF(a.handleQRRoot))
-	router.Any("/wx/qrcodeauth/*path", gin.WrapF(a.handleQR))
-	router.Any("/wx/mpgeta8key", gin.WrapF(a.handleWXMPGetA8Key))
-	router.Any("/wx/appmsgext", gin.WrapF(a.handleWXAppMsgExt))
-	router.Any("/wx/appmsglike", gin.WrapF(a.handleWXAppMsgLike))
 	router.NoRoute(func(c *gin.Context) {
 		writeError(c.Writer, http.StatusNotFound, "not found")
 	})

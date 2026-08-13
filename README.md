@@ -2,7 +2,7 @@
 
 主要功能变化请查看 [更新日志](CHANGELOG.md)。
 
-应用宝协议服务增强版，提供微信扫码登录、账号与 OpenID 管理、`wx.login` code 获取、凭据按需续期、Web 控制台，以及 Docker 和青龙接入。
+应用宝协议服务增强版，提供微信扫码登录、账号与 OpenID 管理、`wx.login` code 获取、凭据按需续期、带用户权限的 Web 控制台，以及 Docker 和面板接入。
 
 ## 功能
 
@@ -13,7 +13,8 @@
 - 提供 `/wx/*` 和 `/wxapp/*` 两套兼容接口：小程序 code、用户信息、手机号、加密 Key、云函数、二维码授权、文章会话/扩展数据/点赞
 - 应用宝短期凭据接近失效时由后台任务主动续期，业务调用失败时也会按需续期
 - SQLite 持久化账号与协议会话
-- Nginx Basic Auth 保护公开的 Web 入口
+- 独立登录与注册页面，支持管理员、普通用户、用户启停、密码重置和会话管理
+- 用户、角色和网页登录会话存储在 MySQL；微信协议数据继续使用 SQLite
 - 支持与青龙容器共享 Docker 网络
 - 账号运行管理：每个微信账号独立创建、启停和运行青龙脚本，并查看日志
 - 账号独立推送：支持 Server酱、PushPlus 和企业微信机器人，密钥只保存在青龙环境变量
@@ -41,13 +42,41 @@ docker network create qinglong_default
 cp .env.example .env
 ```
 
-编辑 `.env`，至少修改 `YYB_WEB_PASSWORD`。随后构建并启动：
+先在已有 MySQL 中创建独立数据库和最小权限用户：
+
+```sql
+CREATE DATABASE yyb_go CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'yyb_go'@'%' IDENTIFIED BY '替换为随机强密码';
+GRANT ALL PRIVILEGES ON yyb_go.* TO 'yyb_go'@'%';
+FLUSH PRIVILEGES;
+```
+
+编辑 `.env`，至少配置 MySQL DSN 和首次管理员：
+
+```dotenv
+YYB_AUTH_MYSQL_DSN=yyb_go:数据库密码@tcp(youchat-mysql:3306)/yyb_go?charset=utf8mb4&parseTime=true&loc=UTC
+YYB_ADMIN_USER=admin
+YYB_ADMIN_PASSWORD=替换为强密码
+YYB_COOKIE_SECURE=false
+```
+
+`YYB_COOKIE_SECURE` 仅在控制台通过 HTTPS 访问时设为 `true`。首次启动会自动创建表和第一个管理员；数据库已有用户后，不会使用环境变量覆盖管理员密码。旧版 `YYB_WEB_USER`、`YYB_WEB_PASSWORD` 仍可作为直接运行程序时的初始化回退变量。
+
+确保 `yyb-go` 与 MySQL 容器位于至少一个相同 Docker 网络，再构建并启动：
 
 ```bash
 docker compose up -d --build
 ```
 
-默认访问地址为 `http://服务器IP:8000`。登录用户名和密码由 `.env` 中的 `YYB_WEB_USER`、`YYB_WEB_PASSWORD` 决定。
+默认访问地址为 `http://服务器IP:8000`。Nginx Basic Auth 已由应用内登录页面替代。
+
+### 用户与权限
+
+- 第一个管理员由 `YYB_ADMIN_USER`、`YYB_ADMIN_PASSWORD` 初始化。
+- 后续注册账号默认为普通用户，只能进入个人设置、修改密码和管理自己的会话。
+- 管理员可访问微信账号、扫码、协议调试、面板运行管理和用户管理，并可关闭公开注册。
+- `/wx/*`、`/wxapp/*` 保持给青龙脚本调用，不要求浏览器 Cookie；不要直接将这些协议接口暴露到公网。
+- 修改密码会注销该用户的其他会话；管理员重置密码或停用用户会注销该用户全部会话。
 
 ### GitHub Actions 自动与手动构建镜像
 

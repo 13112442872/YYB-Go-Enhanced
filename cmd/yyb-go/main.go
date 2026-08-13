@@ -79,6 +79,10 @@ func main() {
 		QingLongSecret:    clientSecret,
 		QingLongServer:    os.Getenv("YYB_QINGLONG_SERVER"),
 		QingLongRepo:      os.Getenv("YYB_QINGLONG_REPO"),
+		AuthMySQLDSN:      os.Getenv("YYB_AUTH_MYSQL_DSN"),
+		AdminUser:         getEnvWithFallback("YYB_ADMIN_USER", "YYB_WEB_USER"),
+		AdminPassword:     getEnvWithFallback("YYB_ADMIN_PASSWORD", "YYB_WEB_PASSWORD"),
+		CookieSecure:      os.Getenv("YYB_COOKIE_SECURE") == "true",
 	}
 
 	app, err := httpapi.NewApp(cfg)
@@ -118,4 +122,3 @@ func getEnvWithFallback(keys ...string) string {
 	}
 	return ""
 }
-
