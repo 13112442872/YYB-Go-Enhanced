@@ -94,15 +94,23 @@ YYB_KEEPALIVE_AHEAD=45m
 支持对接 **青龙面板 (Qinglong)** 与 **呆呆面板 (daidai-panel)**：
 
 - **Web 控制台配置**：可在 Web 控制台的“面板连接设置”中选择【青龙面板】或【呆呆面板 (daidai-panel)】，填入面板地址与对应的鉴权凭据（青龙使用 `Client ID` / `Client Secret`；呆呆面板使用 `App Key` / `App Secret`）。配置会持久化到 SQLite 数据库并优先于容器环境变量。
-- **智能自动识别**：连接测试时若未指定或选错类型，系统会自动探测并尝试回退调用对方 OpenAPI，成功后自动识别并切换为正确的面板模式。
-- **环境变量配置**：
+- **连接类型识别**：保存连接时若面板类型选错，且当前地址返回 `404` 或 `405`，系统会尝试另一种驱动；识别成功后使用正确的面板类型。
+- **青龙环境变量配置**：
   ```dotenv
-  PANEL_TYPE=daidai   # 可选 qinglong (默认) 或 daidai
-  # 当指定 PANEL_TYPE=daidai 时，系统会自动切换默认 URL 为 http://daidai-panel:5700，无需手动修改 URL！
-  QL_CLIENT_ID=你的呆呆面板AppKey
-  QL_CLIENT_SECRET=你的呆呆面板AppSecret
+  PANEL_TYPE=qinglong
+  QL_URL=http://qinglong:5700
+  QL_CLIENT_ID=你的青龙ClientID
+  QL_CLIENT_SECRET=你的青龙ClientSecret
   ```
-  *(注：也可使用专属环境变量 `DAIDAI_URL`、`DAIDAI_APP_KEY`、`DAIDAI_APP_SECRET`)*
+- **呆呆面板环境变量配置**：
+  ```dotenv
+  PANEL_TYPE=daidai
+  DAIDAI_URL=http://daidai-panel:5700
+  DAIDAI_APP_KEY=你的呆呆面板AppKey
+  DAIDAI_APP_SECRET=你的呆呆面板AppSecret
+  ```
+
+升级前已经使用青龙的部署不需要迁移配置，原有 `QL_URL`、`QL_CLIENT_ID` 和 `QL_CLIENT_SECRET` 会继续生效。面板适配层会分别处理青龙和呆呆的任务启停、运行状态与日志接口，避免混用两种面板不同的状态字段。
 
 扫码成功页和账号控制台都提供“添加/同步到面板”按钮。同步会保留 `YYB_SERVER` 中已有的多行内容和环境变量备注，只追加缺少的账号，并同时识别账号 ID 与 OpenID，避免重复添加。
 
