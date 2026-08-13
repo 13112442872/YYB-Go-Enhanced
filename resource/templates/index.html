@@ -949,12 +949,12 @@
       $("resultMeta").textContent = meta || "已更新";
     }
 
-    function selectedAccount() {
+    const getSelectedAccount = () => {
       return state.accounts.find(item => item.openid === state.selectedOpenID) || null;
-    }
+    };
 
     function syncSelectedAccount() {
-      const selected = selectedAccount();
+      const selected = getSelectedAccount();
       const label = selected ? accountName(selected) : "未选择";
       $("selectedAccountName").textContent = label;
       $("currentAccountText").textContent = label;
@@ -1122,7 +1122,7 @@
     }
 
     async function saveRemark() {
-      const account = selectedAccount();
+      const account = getSelectedAccount();
       if (!account) return;
       const button = $("saveRemarkBtn");
       button.disabled = true;
@@ -1140,7 +1140,7 @@
     }
 
     async function syncQingLong() {
-      const account = selectedAccount();
+      const account = getSelectedAccount();
       if (!account) return;
       const button = $("syncQingLongBtn");
       button.disabled = true;
@@ -1161,7 +1161,7 @@
     }
 
     async function deleteAccount() {
-      const account = selectedAccount();
+      const account = getSelectedAccount();
       if (!account) return;
       const label = `ID ${account.id}${account.remark ? `（${account.remark}）` : ""}`;
       const confirmed = window.confirm(
@@ -1189,7 +1189,7 @@
         setActivity(`账号删除失败：${error.data?.detail || error.message}`);
       } finally {
         button.textContent = "删除账号";
-        button.disabled = !selectedAccount();
+        button.disabled = !getSelectedAccount();
       }
     }
 
@@ -1258,7 +1258,7 @@
 
     async function callFeature() {
       const feature = currentFeature();
-      const account = selectedAccount();
+      const account = getSelectedAccount();
       if (!account && feature?.requiresAccount !== false) {
         setResult("请先选择一个账号。", "缺少账号", true);
         return;

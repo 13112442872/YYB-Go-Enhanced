@@ -97,12 +97,12 @@ YYB_KEEPALIVE_AHEAD=45m
 - **智能自动识别**：连接测试时若未指定或选错类型，系统会自动探测并尝试回退调用对方 OpenAPI，成功后自动识别并切换为正确的面板模式。
 - **环境变量配置**：
   ```dotenv
-  PANEL_TYPE=daidai   # 可选 qinglong 或 daidai，默认 qinglong
-  QL_URL=http://daidai-panel:5700
+  PANEL_TYPE=daidai   # 可选 qinglong (默认) 或 daidai
+  # 当指定 PANEL_TYPE=daidai 时，系统会自动切换默认 URL 为 http://daidai-panel:5700，无需手动修改 URL！
   QL_CLIENT_ID=你的呆呆面板AppKey
   QL_CLIENT_SECRET=你的呆呆面板AppSecret
   ```
-  *(注：呆呆面板也可直接使用 `DAIDAI_URL`、`DAIDAI_APP_KEY`、`DAIDAI_APP_SECRET`)*
+  *(注：也可使用专属环境变量 `DAIDAI_URL`、`DAIDAI_APP_KEY`、`DAIDAI_APP_SECRET`)*
 
 扫码成功页和账号控制台都提供“添加/同步到面板”按钮。同步会保留 `YYB_SERVER` 中已有的多行内容和环境变量备注，只追加缺少的账号，并同时识别账号 ID 与 OpenID，避免重复添加。
 

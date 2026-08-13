@@ -310,11 +310,11 @@ func (a *App) cleanupAccountFromQingLong(ctx context.Context, acc *store.WechatA
 	updated := make([]qingLongEnv, 0, len(changes))
 	rollbackEnvs := func() {
 		for i := len(updated) - 1; i >= 0; i-- {
-			_ = a.qinglong.updateEnv(ctx, updated[i], updated[i].Value)
+			_ = a.qinglong.updateEnvEntry(ctx, updated[i], updated[i].Value)
 		}
 	}
 	for _, change := range changes {
-		if err := a.qinglong.updateEnv(ctx, change.env, change.newValue); err != nil {
+		if err := a.qinglong.updateEnvEntry(ctx, change.env, change.newValue); err != nil {
 			rollbackEnvs()
 			return result, err
 		}
