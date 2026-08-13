@@ -132,8 +132,8 @@ func (a *App) handleQingLongJobs(w http.ResponseWriter, r *http.Request) {
 				item.Enabled = cron.enabled()
 				item.Running = cron.running()
 				item.QLCronID = cron.ID
-				item.LastExecutionAt = cron.LastExecutionTime
-				item.LastRunningTime = cron.LastRunningTime
+				item.LastExecutionAt = cron.getLastExecutionAt()
+				item.LastRunningTime = cron.getLastRunningTime()
 			}
 		}
 		out = append(out, item)

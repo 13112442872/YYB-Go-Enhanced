@@ -35,8 +35,8 @@ type qingLongCron struct {
 	LogName            string  `json:"log_name"`
 	LogPath            string  `json:"log_path"`
 	Status             any     `json:"status"`
-	LastExecutionTime  int64   `json:"last_execution_time"`
-	LastRunningTime    int64   `json:"last_running_time"`
+	LastExecutionTime  any     `json:"last_execution_time"`
+	LastRunningTime    any     `json:"last_running_time"`
 	IsDisabled         *int    `json:"isDisabled"`
 	IsRunning          *int    `json:"is_running"`
 	IsRunningAlt       *int    `json:"isRunning"`
@@ -84,6 +84,30 @@ func (c qingLongCron) running() bool {
 		}
 	}
 	return false
+}
+
+func (c qingLongCron) getLastExecutionAt() int64 {
+	switch v := c.LastExecutionTime.(type) {
+	case int64:
+		return v
+	case float64:
+		return int64(v)
+	case int:
+		return int64(v)
+	}
+	return 0
+}
+
+func (c qingLongCron) getLastRunningTime() int64 {
+	switch v := c.LastRunningTime.(type) {
+	case int64:
+		return v
+	case float64:
+		return int64(v)
+	case int:
+		return int64(v)
+	}
+	return 0
 }
 
 type qingLongLogEntry struct {

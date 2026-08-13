@@ -181,13 +181,17 @@ func (d *daidaiDriver) ListEnvs(ctx context.Context, searchValue string) ([]qing
 		Data []qingLongEnv `json:"data"`
 		List []qingLongEnv `json:"list"`
 	}
-	if err := json.Unmarshal(raw, &page); err != nil {
-		return nil, err
+	if err := json.Unmarshal(raw, &page); err == nil {
+		if page.Data != nil {
+			return page.Data, nil
+		}
+		return page.List, nil
 	}
-	if page.Data != nil {
-		return page.Data, nil
+	var errList []qingLongEnv
+	if err := json.Unmarshal(raw, &errList); err != nil {
+		return nil, fmt.Errorf("解析呆呆面板环境变量失败: %w", err)
 	}
-	return page.List, nil
+	return []qingLongEnv{}, nil
 }
 
 func (d *daidaiDriver) UpsertEnv(ctx context.Context, name, value, remarks string) error {
@@ -261,13 +265,17 @@ func (d *daidaiDriver) ListCrons(ctx context.Context, search string) ([]qingLong
 		Data []qingLongCron `json:"data"`
 		List []qingLongCron `json:"list"`
 	}
-	if err := json.Unmarshal(raw, &page); err != nil {
-		return nil, err
+	if err := json.Unmarshal(raw, &page); err == nil {
+		if page.Data != nil {
+			return page.Data, nil
+		}
+		return page.List, nil
 	}
-	if page.Data != nil {
-		return page.Data, nil
+	var errOut []qingLongCron
+	if err := json.Unmarshal(raw, &errOut); err != nil {
+		return nil, fmt.Errorf("解析呆呆面板任务列表失败: %w", err)
 	}
-	return page.List, nil
+	return []qingLongCron{}, nil
 }
 
 func (d *daidaiDriver) CreateCron(ctx context.Context, name, command, schedule, taskBefore, logName string) (*qingLongCron, error) {

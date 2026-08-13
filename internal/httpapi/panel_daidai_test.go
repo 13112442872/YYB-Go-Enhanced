@@ -73,8 +73,8 @@ func TestDaidaiDriver_MockServer(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"data": []map[string]any{
-					{"id": 10, "name": "task1", "command": "node task.js", "cron_expression": "0 0 * * *", "status": 1.0},
-					{"id": 20, "name": "task2", "command": "python task.py", "cron_expression": "0 1 * * *", "status": 0.0},
+					{"id": 10, "name": "task1", "command": "node task.js", "cron_expression": "0 0 * * *", "status": 1.0, "last_running_time": 1.5, "last_run_at": "2026-08-12T16:00:00Z"},
+					{"id": 20, "name": "task2", "command": "python task.py", "cron_expression": "0 1 * * *", "status": 0.0, "last_running_time": 0.0},
 				},
 				"total":     2,
 				"page":      1,
