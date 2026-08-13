@@ -22,6 +22,8 @@ type qingLongDriver struct {
 	tokenExpiry  time.Time
 }
 
+const qingLongResponseLimit = 16 << 20
+
 func newQingLongDriver(baseURL, clientID, clientSecret string, timeout time.Duration) *qingLongDriver {
 	if timeout <= 0 {
 		timeout = 10 * time.Second
@@ -121,9 +123,15 @@ func (d *qingLongDriver) request(ctx context.Context, method, path string, body 
 		return err
 	}
 	defer resp.Body.Close()
-	rawBody, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+	rawBody, err := io.ReadAll(io.LimitReader(resp.Body, qingLongResponseLimit+1))
 	if err != nil {
 		return err
+	}
+	if len(rawBody) > qingLongResponseLimit {
+		return fmt.Errorf("青龙面板响应超过 %d MB，请清理过旧日志后重试", qingLongResponseLimit>>20)
+	}
+	if len(rawBody) == 0 && out != nil {
+		return fmt.Errorf("青龙面板返回空响应 (HTTP %d)", resp.StatusCode)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("青龙面板 HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(rawBody)))
@@ -137,9 +145,15 @@ func (d *qingLongDriver) request(ctx context.Context, method, path string, body 
 		Data json.RawMessage `json:"data"`
 	}
 	if err := json.Unmarshal(rawBody, &envelope); err == nil && (envelope.Code == 200 || envelope.Code == 0) && envelope.Data != nil {
-		return json.Unmarshal(envelope.Data, out)
+		if err := json.Unmarshal(envelope.Data, out); err != nil {
+			return fmt.Errorf("解析青龙面板响应 data 失败: %w", err)
+		}
+		return nil
 	}
-	return json.Unmarshal(rawBody, out)
+	if err := json.Unmarshal(rawBody, out); err != nil {
+		return fmt.Errorf("解析青龙面板响应失败: %w", err)
+	}
+	return nil
 }
 
 func (d *qingLongDriver) ListEnvs(ctx context.Context, searchValue string) ([]qingLongEnv, error) {

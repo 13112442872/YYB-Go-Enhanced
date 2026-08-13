@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>添加微信账号 - YYB Go</title>
+  <title>添加账号 - YYB Go</title>
+  <link rel="stylesheet" href="/static/css/platform.css">
   <style>
     :root { color-scheme: light; --bg:#f5f6f8; --surface:#fff; --ink:#20242b; --muted:#68707d; --line:#dde1e7; --primary:#c53255; --primary-hover:#a82445; --success:#287a49; --success-soft:#edf8f1; --danger:#b53636; --radius:8px; }
     * { box-sizing:border-box; }
@@ -144,5 +145,6 @@
     $("quickModeBtn").addEventListener("click",()=>showMode("quick")); $("qrModeBtn").addEventListener("click",()=>showMode("qr")); $("quickAuthBtn").addEventListener("click",authorizeQuick); $("quickRetryBtn").addEventListener("click",detectQuickLogin); $("refreshBtn").addEventListener("click",newQR); $("backBtn").addEventListener("click",()=>{stopTimers();location.href="/";}); $("saveRemarkBtn").addEventListener("click",()=>saveRemark()); $("syncBtn").addEventListener("click",syncAccount); $("copyBtn").addEventListener("click",async()=>{ try{await navigator.clipboard.writeText(account?.openid||"");setMessage("OpenID 已复制","ok");}catch{setMessage("复制失败，请手动选择 OpenID","error");} });
     detectQuickLogin();
   </script>
+  <script src="/static/js/platform.js"></script>
 </body>
 </html>
