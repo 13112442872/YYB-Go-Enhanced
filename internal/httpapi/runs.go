@@ -132,8 +132,8 @@ func (a *App) handleQingLongJobs(w http.ResponseWriter, r *http.Request) {
 				item.Enabled = cron.enabled()
 				item.Running = cron.running()
 				item.QLCronID = cron.ID
-				item.LastExecutionAt = cron.LastExecutionTime
-				item.LastRunningTime = cron.LastRunningTime
+				item.LastExecutionAt = cron.getLastExecutionAt()
+				item.LastRunningTime = cron.getLastRunningTime()
 			}
 		}
 		out = append(out, item)
@@ -419,7 +419,7 @@ func (a *App) handleQingLongPush(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) scriptCatalog(ctx context.Context) ([]scriptSource, map[int64]qingLongCron, error) {
 	if !a.qinglong.configured() {
-		return nil, nil, fmt.Errorf("青龙 OpenAPI 未配置")
+		return nil, nil, fmt.Errorf("面板 OpenAPI 未配置")
 	}
 	repos, err := qingLongRepoRoots(a.cfg.QingLongRepo)
 	if err != nil {
@@ -427,24 +427,30 @@ func (a *App) scriptCatalog(ctx context.Context) ([]scriptSource, map[int64]qing
 	}
 	byKey := make(map[string]scriptSource)
 	byID := make(map[int64]qingLongCron)
+
+	var crons []qingLongCron
 	for _, repo := range repos {
-		crons, err := a.qinglong.listCrons(ctx, repo)
+		list, err := a.qinglong.listCrons(ctx, repo)
+		if err == nil && len(list) > 0 {
+			crons = append(crons, list...)
+		}
+	}
+	if len(crons) == 0 {
+		list, err := a.qinglong.listCrons(ctx, "")
 		if err != nil {
 			return nil, nil, err
 		}
-		prefix := "task " + repo + "/"
-		for _, cron := range crons {
-			byID[cron.ID] = cron
-			if strings.HasPrefix(cron.Name, "[YYB:") || !strings.HasPrefix(cron.Command, prefix) {
-				continue
-			}
-			key := strings.TrimSpace(strings.TrimPrefix(cron.Command, prefix))
-			if !validScriptKey.MatchString(key) || key == "eoos/eoos_checkin.py" || key == "SendNotify.py" {
-				continue
-			}
-			if _, exists := byKey[key]; !exists {
-				byKey[key] = scriptSource{Key: key, Name: cron.Name, Schedule: cron.Schedule, TaskRoot: repo, Cron: cron}
-			}
+		crons = list
+	}
+
+	for _, cron := range crons {
+		byID[cron.ID] = cron
+		key, repo, ok := parseScriptKeyFromCron(cron, repos)
+		if !ok {
+			continue
+		}
+		if _, exists := byKey[key]; !exists {
+			byKey[key] = scriptSource{Key: key, Name: cron.Name, Schedule: cron.getSchedule(), TaskRoot: repo, Cron: cron}
 		}
 	}
 	out := make([]scriptSource, 0, len(byKey))
@@ -455,6 +461,40 @@ func (a *App) scriptCatalog(ctx context.Context) ([]scriptSource, map[int64]qing
 		return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name)
 	})
 	return out, byID, nil
+}
+
+func parseScriptKeyFromCron(cron qingLongCron, repos []string) (string, string, bool) {
+	if strings.HasPrefix(cron.Name, "[YYB:") {
+		return "", "", false
+	}
+	cmd := strings.TrimSpace(cron.Command)
+	for _, p := range []string{"task ", "node ", "python3 ", "python "} {
+		if strings.HasPrefix(cmd, p) {
+			cmd = strings.TrimSpace(strings.TrimPrefix(cmd, p))
+		}
+	}
+	for _, repo := range repos {
+		cleanRepo := strings.Trim(strings.TrimSpace(repo), "/")
+		prefix := cleanRepo + "/"
+		if strings.HasPrefix(cmd, prefix) {
+			key := strings.TrimSpace(strings.TrimPrefix(cmd, prefix))
+			if validScriptKey.MatchString(key) && !isIgnoredScriptKey(key) {
+				return key, cleanRepo, true
+			}
+		}
+		if idx := strings.Index(cmd, "/"+cleanRepo+"/"); idx != -1 {
+			key := strings.TrimSpace(cmd[idx+len("/"+cleanRepo+"/"):])
+			if validScriptKey.MatchString(key) && !isIgnoredScriptKey(key) {
+				return key, cleanRepo, true
+			}
+		}
+	}
+	return "", "", false
+}
+
+func isIgnoredScriptKey(key string) bool {
+	key = strings.TrimSpace(key)
+	return key == "SendNotify.py" || strings.Contains(key, "eoos_checkin.py")
 }
 
 func (a *App) ensureAccountJob(ctx context.Context, acc *store.WechatAccount, scriptKey string) (*store.AccountScriptJob, scriptSource, error) {

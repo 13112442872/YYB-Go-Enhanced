@@ -25,6 +25,43 @@ func main() {
 	keepAliveAhead := flag.Duration("keepalive-ahead", 45*time.Minute, "refresh credentials this long before expiry")
 	flag.Parse()
 
+	panelType := getEnvWithFallback("PANEL_TYPE", "YYB_PANEL_TYPE", "QL_TYPE")
+	if panelType == "" {
+		panelType = "qinglong"
+	}
+
+	var panelURL string
+	if panelType == "daidai" {
+		daidaiURL := getEnvWithFallback("DAIDAI_URL")
+		qlURL := getEnvWithFallback("QL_URL")
+		if daidaiURL != "" {
+			panelURL = daidaiURL
+		} else if qlURL != "" && qlURL != "http://qinglong:5700" {
+			panelURL = qlURL
+		} else {
+			panelURL = "http://daidai-panel:5700"
+		}
+	} else {
+		qlURL := getEnvWithFallback("QL_URL")
+		daidaiURL := getEnvWithFallback("DAIDAI_URL")
+		if qlURL != "" {
+			panelURL = qlURL
+		} else if daidaiURL != "" {
+			panelURL = daidaiURL
+		} else {
+			panelURL = "http://qinglong:5700"
+		}
+	}
+
+	var clientID, clientSecret string
+	if panelType == "daidai" {
+		clientID = getEnvWithFallback("DAIDAI_APP_KEY", "QL_CLIENT_ID")
+		clientSecret = getEnvWithFallback("DAIDAI_APP_SECRET", "QL_CLIENT_SECRET")
+	} else {
+		clientID = getEnvWithFallback("QL_CLIENT_ID", "DAIDAI_APP_KEY")
+		clientSecret = getEnvWithFallback("QL_CLIENT_SECRET", "DAIDAI_APP_SECRET")
+	}
+
 	cfg := httpapi.Config{
 		ResourceRoot:      *resourceRoot,
 		DBFilename:        *dbFilename,
@@ -36,9 +73,10 @@ func main() {
 		QRSessionTTL:      5 * time.Minute,
 		KeepAliveInterval: *keepAliveInterval,
 		KeepAliveAhead:    *keepAliveAhead,
-		QingLongURL:       os.Getenv("QL_URL"),
-		QingLongClientID:  os.Getenv("QL_CLIENT_ID"),
-		QingLongSecret:    os.Getenv("QL_CLIENT_SECRET"),
+		QingLongType:      panelType,
+		QingLongURL:       panelURL,
+		QingLongClientID:  clientID,
+		QingLongSecret:    clientSecret,
 		QingLongServer:    os.Getenv("YYB_QINGLONG_SERVER"),
 		QingLongRepo:      os.Getenv("YYB_QINGLONG_REPO"),
 	}
@@ -71,3 +109,13 @@ func main() {
 	defer cancel()
 	_ = srv.Shutdown(ctx)
 }
+
+func getEnvWithFallback(keys ...string) string {
+	for _, key := range keys {
+		if val := os.Getenv(key); val != "" {
+			return val
+		}
+	}
+	return ""
+}
+

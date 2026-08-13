@@ -12,6 +12,7 @@ import (
 )
 
 const (
+	qingLongTypeSetting     = "qinglong_type"
 	qingLongURLSetting      = "qinglong_url"
 	qingLongClientIDSetting = "qinglong_client_id"
 	qingLongSecretSetting   = "qinglong_client_secret"
@@ -23,6 +24,7 @@ type accountRemarkIn struct {
 }
 
 type qingLongConfigIn struct {
+	Type         string `json:"type"`
 	URL          string `json:"url"`
 	ClientID     string `json:"client_id"`
 	ClientSecret string `json:"client_secret"`
@@ -79,7 +81,7 @@ func (a *App) handleAccountRemark(w http.ResponseWriter, r *http.Request) {
 			settingErr = a.refreshAccountJobCommands(r.Context(), acc, setting)
 		}
 		if settingErr != nil {
-			result["warning"] = "备注已保存，但青龙任务名称更新失败：" + settingErr.Error()
+			result["warning"] = "备注已保存，但面板任务名称更新失败：" + settingErr.Error()
 		} else {
 			result["jobs_updated"] = true
 		}
@@ -90,8 +92,9 @@ func (a *App) handleAccountRemark(w http.ResponseWriter, r *http.Request) {
 func (a *App) handleQingLongConfig(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		baseURL, clientID, secret := a.qinglong.configuration()
+		pType, baseURL, clientID, secret := a.qinglong.configuration()
 		writeJSON(w, http.StatusOK, map[string]any{
+			"type":              pType,
 			"url":               baseURL,
 			"client_id":         clientID,
 			"secret_configured": strings.TrimSpace(secret) != "",
@@ -104,17 +107,21 @@ func (a *App) handleQingLongConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if body.Clear {
-			if err := a.persistQingLongConfig(r.Context(), "", "", ""); err != nil {
+			if err := a.persistQingLongConfig(r.Context(), PanelTypeQingLong, "", "", ""); err != nil {
 				writeError(w, http.StatusInternalServerError, err.Error())
 				return
 			}
-			a.qinglong.reconfigure("", "", "")
+			a.qinglong.reconfigure(PanelTypeQingLong, "", "", "")
 			writeJSON(w, http.StatusOK, map[string]any{"configured": false, "connected": false})
 			return
 		}
+		pType := strings.ToLower(strings.TrimSpace(body.Type))
+		if pType != PanelTypeDaidai {
+			pType = PanelTypeQingLong
+		}
 		baseURL := strings.TrimRight(strings.TrimSpace(body.URL), "/")
 		clientID := strings.TrimSpace(body.ClientID)
-		_, _, currentSecret := a.qinglong.configuration()
+		_, _, _, currentSecret := a.qinglong.configuration()
 		secret := strings.TrimSpace(body.ClientSecret)
 		if secret == "" {
 			secret = currentSecret
@@ -123,18 +130,24 @@ func (a *App) handleQingLongConfig(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		candidate := newQingLongClient(baseURL, clientID, secret, a.cfg.RequestTimeout)
+		candidate := newQingLongClient(pType, baseURL, clientID, secret, a.cfg.RequestTimeout)
 		if err := candidate.status(r.Context()); err != nil {
-			writeError(w, http.StatusBadGateway, "青龙连接测试失败："+err.Error())
+			panelName := "面板"
+			if pType == PanelTypeDaidai {
+				panelName = "呆呆面板"
+			} else {
+				panelName = "青龙面板"
+			}
+			writeError(w, http.StatusBadGateway, panelName+"连接测试失败："+err.Error())
 			return
 		}
-		if err := a.persistQingLongConfig(r.Context(), baseURL, clientID, secret); err != nil {
+		if err := a.persistQingLongConfig(r.Context(), pType, baseURL, clientID, secret); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		a.qinglong.reconfigure(baseURL, clientID, secret)
+		a.qinglong.reconfigure(pType, baseURL, clientID, secret)
 		writeJSON(w, http.StatusOK, map[string]any{
-			"url": baseURL, "client_id": clientID, "secret_configured": true,
+			"type": pType, "url": baseURL, "client_id": clientID, "secret_configured": true,
 			"configured": true, "connected": true,
 		})
 	default:
@@ -142,9 +155,12 @@ func (a *App) handleQingLongConfig(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (a *App) persistQingLongConfig(ctx context.Context, baseURL, clientID, secret string) error {
+func (a *App) persistQingLongConfig(ctx context.Context, pType, baseURL, clientID, secret string) error {
 	for key, value := range map[string]string{
-		qingLongURLSetting: baseURL, qingLongClientIDSetting: clientID, qingLongSecretSetting: secret,
+		qingLongTypeSetting:     pType,
+		qingLongURLSetting:      baseURL,
+		qingLongClientIDSetting: clientID,
+		qingLongSecretSetting:   secret,
 	} {
 		if err := a.db.SetSetting(ctx, key, value); err != nil {
 			return err
@@ -294,11 +310,11 @@ func (a *App) cleanupAccountFromQingLong(ctx context.Context, acc *store.WechatA
 	updated := make([]qingLongEnv, 0, len(changes))
 	rollbackEnvs := func() {
 		for i := len(updated) - 1; i >= 0; i-- {
-			_ = a.qinglong.updateEnv(ctx, updated[i], updated[i].Value)
+			_ = a.qinglong.updateEnvEntry(ctx, updated[i], updated[i].Value)
 		}
 	}
 	for _, change := range changes {
-		if err := a.qinglong.updateEnv(ctx, change.env, change.newValue); err != nil {
+		if err := a.qinglong.updateEnvEntry(ctx, change.env, change.newValue); err != nil {
 			rollbackEnvs()
 			return result, err
 		}
