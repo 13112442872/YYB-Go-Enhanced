@@ -38,6 +38,7 @@ type qingLongCron struct {
 	LastExecutionTime  any     `json:"last_execution_time"`
 	LastRunningTime    any     `json:"last_running_time"`
 	IsDisabled         *int    `json:"isDisabled"`
+	Enabled            *bool   `json:"enabled"`
 	IsRunning          *int    `json:"is_running"`
 	IsRunningAlt       *int    `json:"isRunning"`
 	PID                any     `json:"pid"`
@@ -52,6 +53,14 @@ func (c qingLongCron) getSchedule() string {
 }
 
 func (c qingLongCron) enabled() bool {
+	// QingLong exposes isDisabled and uses status for the runtime state.
+	// Daidai exposes enabled (or status=1 for enabled) without isDisabled.
+	if c.IsDisabled != nil {
+		return *c.IsDisabled == 0
+	}
+	if c.Enabled != nil {
+		return *c.Enabled
+	}
 	switch v := c.Status.(type) {
 	case float64:
 		return v != 0
@@ -60,13 +69,21 @@ func (c qingLongCron) enabled() bool {
 	case bool:
 		return v
 	}
-	if c.IsDisabled != nil {
-		return *c.IsDisabled == 0
-	}
 	return true
 }
 
 func (c qingLongCron) running() bool {
+	if c.IsDisabled != nil {
+		switch v := c.Status.(type) {
+		case float64:
+			return v >= 0 && v < 1
+		case int:
+			return v == 0
+		case int64:
+			return v == 0
+		}
+		return false
+	}
 	if (c.IsRunning != nil && *c.IsRunning != 0) || (c.IsRunningAlt != nil && *c.IsRunningAlt != 0) || c.ExecutionStatusAlt == 2 {
 		return true
 	}

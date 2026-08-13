@@ -335,7 +335,9 @@ func (d *daidaiDriver) RunCrons(ctx context.Context, ids []int64) error {
 
 func (d *daidaiDriver) DeleteCrons(ctx context.Context, ids []int64) error {
 	for _, id := range ids {
-		_ = d.request(ctx, http.MethodDelete, fmt.Sprintf("/api/v1/tasks/%d", id), nil, nil)
+		if err := d.request(ctx, http.MethodDelete, fmt.Sprintf("/api/v1/tasks/%d", id), nil, nil); err != nil {
+			return err
+		}
 	}
 	return nil
 }

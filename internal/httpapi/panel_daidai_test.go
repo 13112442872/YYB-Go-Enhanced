@@ -34,6 +34,22 @@ func TestDaidaiDriver_EnabledMapping(t *testing.T) {
 	}
 }
 
+func TestQingLongCronStateTakesPriorityOverStalePID(t *testing.T) {
+	enabled := 0
+	idle := qingLongCron{Status: float64(1), IsDisabled: &enabled, PID: float64(1234)}
+	if !idle.enabled() {
+		t.Fatal("expected QingLong cron with isDisabled=0 to be enabled")
+	}
+	if idle.running() {
+		t.Fatal("expected QingLong cron with status=1 to be idle even when PID is retained")
+	}
+
+	running := qingLongCron{Status: float64(0), IsDisabled: &enabled, PID: float64(1234)}
+	if !running.running() {
+		t.Fatal("expected QingLong cron with status=0 to be running")
+	}
+}
+
 func TestDaidaiDriver_MockServer(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
