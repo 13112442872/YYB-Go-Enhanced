@@ -341,26 +341,28 @@
     .account-strip {
       padding: 12px;
       display: grid;
-      grid-auto-flow: column;
-      grid-auto-columns: minmax(238px, 280px);
+      grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
       gap: 10px;
-      overflow-x: auto;
+      max-height: 326px;
+      overflow-y: auto;
+      align-content: start;
       scrollbar-width: thin;
-      min-height: 126px;
+      min-height: 112px;
     }
 
     .account-card {
       width: 100%;
-      min-height: 100px;
-      padding: 12px;
+      min-width: 0;
+      min-height: 88px;
+      padding: 10px;
       border: 1px solid var(--line);
       border-radius: var(--radius);
       background: var(--surface);
       color: var(--ink);
       text-align: left;
       display: grid;
-      grid-template-columns: 42px minmax(0, 1fr);
-      gap: 10px;
+      grid-template-columns: 36px minmax(0, 1fr);
+      gap: 9px;
       align-items: start;
       transition: background 160ms ease, border-color 160ms ease;
     }
@@ -376,8 +378,8 @@
     }
 
     .avatar {
-      width: 42px;
-      height: 42px;
+      width: 36px;
+      height: 36px;
       border-radius: 50%;
       overflow: hidden;
       background: var(--surface-strong);
@@ -398,10 +400,19 @@
     .account-main {
       min-width: 0;
       display: grid;
-      gap: 6px;
+      gap: 4px;
+    }
+
+    .account-header {
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
     }
 
     .account-name {
+      min-width: 0;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -414,12 +425,16 @@
       gap: 7px;
       color: var(--muted);
       font-size: 12px;
+      white-space: nowrap;
+      flex: 0 0 auto;
     }
 
     .account-meta {
       color: var(--faint);
       font-size: 12px;
-      overflow-wrap: anywhere;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .account-openid {
@@ -427,10 +442,13 @@
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
       font-size: 11px;
       line-height: 1.45;
-      overflow-wrap: anywhere;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .empty-state {
+      grid-column: 1 / -1;
       min-height: 100px;
       display: grid;
       place-items: center;
@@ -629,11 +647,13 @@
 
       .top-actions {
         width: 100%;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
       }
 
       .top-actions .btn,
       .top-actions .status-pill {
-        flex: 1;
+        width: 100%;
       }
 
       .shell {
@@ -658,7 +678,8 @@
       .account-tools { grid-template-columns: 1fr; }
 
       .account-strip {
-        grid-auto-columns: minmax(222px, 86vw);
+        grid-template-columns: minmax(0, 1fr);
+        max-height: 438px;
       }
     }
 
@@ -957,7 +978,9 @@
       $("syncQingLongBtn").disabled = !selected;
       $("deleteAccountBtn").disabled = !selected;
       document.querySelectorAll(".account-card").forEach(card => {
-        card.classList.toggle("selected", card.dataset.openid === state.selectedOpenID);
+        const selected = card.dataset.openid === state.selectedOpenID;
+        card.classList.toggle("selected", selected);
+        card.setAttribute("aria-pressed", String(selected));
       });
     }
 
@@ -989,16 +1012,20 @@
         button.type = "button";
         button.className = "account-card";
         button.dataset.openid = account.openid;
+        button.setAttribute("aria-pressed", "false");
+        button.setAttribute("aria-label", `选择账号 ${name}，ID ${account.id}`);
         button.innerHTML = `
           <span class="avatar">
             <img alt="" src="/accounts/avatar?ref=${encodeURIComponent(account.openid)}">
             <span class="avatar-letter hidden">${escapeHTML(name.slice(0, 1).toUpperCase() || "Y")}</span>
           </span>
-            <span class="account-main">
+          <span class="account-main">
+            <span class="account-header">
               <span class="account-name">${escapeHTML(name)}</span>
               <span class="account-status ${cls}"><span class="status-dot"></span>${statusText(account.status)}</span>
-            <span class="account-meta">ID: ${escapeHTML(account.id)} · UIN: ${escapeHTML(account.uin ?? "-")} · ${formatChecked(account.last_checked_at)}</span>
-            <span class="account-openid">OpenID: ${escapeHTML(account.openid)}</span>
+            </span>
+            <span class="account-meta" title="ID: ${escapeHTML(account.id)} · UIN: ${escapeHTML(account.uin ?? "-")} · ${formatChecked(account.last_checked_at)}">ID: ${escapeHTML(account.id)} · UIN: ${escapeHTML(account.uin ?? "-")} · ${formatChecked(account.last_checked_at)}</span>
+            <span class="account-openid" title="OpenID: ${escapeHTML(account.openid)}">OpenID: ${escapeHTML(account.openid)}</span>
           </span>
         `;
         button.querySelector("img").addEventListener("error", event => {
