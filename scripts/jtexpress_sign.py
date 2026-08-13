@@ -273,6 +273,34 @@ class JtClient:
         data = payload.get("data") or []
         return data if payload.get("code") == 1 and isinstance(data, list) else []
 
+    def sent_orders(self) -> list[dict[str, Any]]:
+        payload = self.request(
+            "GET",
+            "/orderMerge/expressDelivery/page",
+            params={"current": 1, "size": 20, "searchType": 1, "type": ""},
+        )
+        data = payload.get("data") or {}
+        records = data.get("records") if isinstance(data, dict) else []
+        return records if payload.get("code") == 1 and isinstance(records, list) else []
+
+    def receive_shared_order(self, sender: "JtClient", order_id: Any) -> None:
+        receiver_openid = self.user_info.get("openid")
+        sender_member_id = sender.user_info.get("numberId")
+        if not receiver_openid or not sender_member_id or not order_id:
+            raise ScriptError("分享运单缺少接收者openid、分享者memberId或orderId")
+        payload = self.request(
+            "POST",
+            "/user/shareOrder",
+            json={
+                "beSharedOpenid": receiver_openid,
+                "orderId": order_id,
+                "memberId": sender_member_id,
+                "timestamp": int(time.time() * 1000),
+            },
+        )
+        if payload.get("code") != 1:
+            raise ScriptError(payload.get("msg") or "分享运单回调失败")
+
 
 def mask_phone(value: Any) -> str:
     phone = str(value or "")
@@ -291,9 +319,9 @@ def task_summary(tasks: list[dict[str, Any]]) -> str:
     return "；".join(output) if output else "未返回任务数据"
 
 
-def sign_task_completed(tasks: list[dict[str, Any]]) -> bool:
+def task_completed(tasks: list[dict[str, Any]], action: str) -> bool:
     for item in tasks:
-        if str(item.get("memberAction") or "") == "sign":
+        if str(item.get("memberAction") or "") == action:
             value = item.get("isLimit")
             if isinstance(value, str):
                 return value.strip().lower() in {"true", "1", "yes"}
@@ -309,7 +337,7 @@ def signed_status_text(status: Optional[bool], raw: Any) -> str:
     return "无法解析" + (f"（原始值：{safe_text(raw)}）" if raw is not None else "")
 
 
-def run_account(account: YybAccount) -> bool:
+def run_account(account: YybAccount) -> JtClient:
     print(f"\n================ {account.label} ================")
     client = JtClient(account)
     client.authenticate()
@@ -339,14 +367,58 @@ def run_account(account: YybAccount) -> bool:
     signed_after, raw_after = client.is_signed()
     after = client.profile()
     tasks = client.tasks()
-    completed = signed_after is True or sign_task_completed(tasks)
+    completed = signed_after is True or task_completed(tasks, "sign")
     print(f"签到后状态：{signed_status_text(signed_after, raw_after)}")
     print(f"签到后成长值：{after.get('growValue', '-')}")
     print("任务状态：" + task_summary(tasks))
     if not completed:
         raise ScriptError("签到接口调用后，签到状态和任务列表均未确认完成")
     print("签到结果校验：已完成")
-    return True
+    return client
+
+
+def complete_share_tasks(clients: list[JtClient]) -> None:
+    print("\n================ 运单任务处理 ================")
+    for sender in clients:
+        tasks = sender.tasks()
+        if task_completed(tasks, "order"):
+            print(f"{sender.account.label} 每日首寄：已完成")
+        else:
+            print(f"{sender.account.label} 每日首寄：未完成（需真实寄件下单，脚本不会创建订单）")
+
+        if task_completed(tasks, "share"):
+            print(f"{sender.account.label} 分享运单：已完成")
+            continue
+        orders = [item for item in sender.sent_orders() if item.get("orderId")]
+        receiver = next(
+            (
+                item
+                for item in clients
+                if item is not sender
+                and item.user_info.get("openid")
+                and item.user_info.get("openid") != sender.user_info.get("openid")
+            ),
+            None,
+        )
+        if not orders:
+            print(f"{sender.account.label} 分享运单：跳过（账号没有可分享的真实寄件单）")
+            continue
+        if receiver is None:
+            print(f"{sender.account.label} 分享运单：跳过（没有其他可用 YYB 账号接收分享）")
+            continue
+        order = orders[0]
+        print(
+            f"{sender.account.label} 分享运单：由 {receiver.account.label} 接收，"
+            f"orderId={safe_text(order.get('orderId'))}"
+        )
+        try:
+            receiver.receive_shared_order(sender, order.get("orderId"))
+            time.sleep(1)
+            if not task_completed(sender.tasks(), "share"):
+                raise ScriptError("分享回调已发送，但发送方任务状态仍未完成")
+            print(f"{sender.account.label} 分享运单：已完成并通过任务状态校验")
+        except ScriptError as exc:
+            print(f"{sender.account.label} 分享运单失败：{safe_text(exc)}")
 
 
 def main() -> int:
@@ -358,11 +430,15 @@ def main() -> int:
     load_remarks(accounts)
     print(f"共读取 {len(accounts)} 个 YYB 账号")
     success = 0
+    clients: list[JtClient] = []
     for account in accounts:
         try:
-            success += int(run_account(account))
+            clients.append(run_account(account))
+            success += 1
         except (ScriptError, requests.RequestException) as exc:
             print(f"{account.label}执行失败：{safe_text(exc)}")
+    if clients:
+        complete_share_tasks(clients)
     print(f"\n执行完成：成功 {success} / 总计 {len(accounts)}")
     return 0 if success == len(accounts) else 1
 
