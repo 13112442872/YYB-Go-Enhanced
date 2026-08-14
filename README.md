@@ -162,7 +162,7 @@ YYB_SERVER=yyb-go:8000@1
 ```text
 /wx/code             获取小程序 code
 /wx/getuserinfo      获取 YYB 账号用户信息
-/wx/encryptkey       获取用户加密 Key（默认通过 operateWxData 调用）
+/wx/encryptkey       加密能力兼容转发（需要真实 payload）
 /wx/getphonenumber   获取手机号
 /wx/cloud            云函数（通过 operateWxData 传递 payload）
 /wx/qrcodeauth       二维码授权会话
@@ -171,7 +171,7 @@ YYB_SERVER=yyb-go:8000@1
 /wx/appmsglike       文章点赞（通过 operateWxData 传递 payload）
 ```
 
-这些接口不会伪造微信返回值。`/wx/cloud`、`/wx/mpgeta8key`、`/wx/appmsgext` 和 `/wx/appmsglike` 需要调用方在 `payload` 中提供目标小程序实际支持的 `api_name`、`data` 等字段，例如：
+这些接口不会伪造微信返回值。`/wx/encryptkey`、`/wx/cloud`、`/wx/mpgeta8key`、`/wx/appmsgext` 和 `/wx/appmsglike` 都是 `operateWxData` 兼容转发，调用方必须在 `payload` 中提供目标业务真实使用的 `api_name`、`data` 等字段，例如：
 
 ```json
 {
@@ -184,7 +184,11 @@ YYB_SERVER=yyb-go:8000@1
 }
 ```
 
-若目标接口不是 `operateWxData` 能力，服务端会原样返回微信协议的错误，需根据该小程序抓包请求补充真实字段。
+`payload` 会原样传给微信协议层，路由名称不会自动生成目标业务参数。文章会话接口不能只根据文章 URL 推导 `api_name`、会话或点赞参数；需要抓取 PC 微信调用 `operateWxData` 时的原始请求体，而不是文章最终 HTTP 请求。
+
+同样，业务接口中的 `encryptData` 不等于 `/wx/encryptkey` 可以直接返回的通用 Key。仅抓到业务服务器的最终 POST 无法确定它是微信能力、云函数还是小程序自己的 JavaScript 加密。若没有原始 `operateWxData` 调用，接口会返回明确的 `payload is required`，不会再发送已知无效的空 `getUserEncryptKey` 请求。
+
+若目标能力并不经过 `operateWxData`，服务端会原样返回微信协议错误，需要根据目标小程序的原始调用补充专用协议实现。
 
 获取 `wx.login` code：
 

@@ -571,7 +571,7 @@ func (a *App) handleOperateWXData(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleWXEncryptKey(w http.ResponseWriter, r *http.Request) {
-	a.handleNamedWXOperation(w, r, "/wx/encryptkey", "getUserEncryptKey", false)
+	a.handleNamedWXOperation(w, r, "/wx/encryptkey", "getUserEncryptKey", true)
 }
 
 func (a *App) handleWXCloud(w http.ResponseWriter, r *http.Request) {

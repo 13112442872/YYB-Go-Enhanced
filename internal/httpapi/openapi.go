@@ -281,7 +281,7 @@ func newOpenAPISpec() map[string]any {
 				"post": openAPIOperation([]string{"wx"}, "获取 YYB 账号用户信息", nil, jsonRequestBody(refSchema("AccountRefRequest")),
 					defaulted(map[string]any{"200": jsonResponse("用户信息。", freeFormObjectSchema("用户信息结果"))})),
 			},
-			"/wx/encryptkey":     wxAliasOperation("获取用户加密 Key", "WxappRequest", "WxappResponse"),
+			"/wx/encryptkey":     wxAliasOperation("加密能力兼容转发（需要真实 payload）", "OperateWXDataRequest", "WxappResponse"),
 			"/wx/getphonenumber": wxAliasOperation("获取手机号（兼容入口）", "WxappRequest", "WxappResponse"),
 			"/wx/cloud":          wxAliasOperation("云函数/通用 operateWxData 兼容入口", "OperateWXDataRequest", "WxappResponse"),
 			"/wx/qrcodeauth": map[string]any{

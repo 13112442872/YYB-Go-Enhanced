@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -82,6 +83,11 @@ func TestHandlerServesGinRoutesAndSwaggerDocs(t *testing.T) {
 			t.Fatalf("OpenAPI path %s tags = %#v, want [wx]", path, tags)
 		}
 	}
+	encryptPost := paths["/wx/encryptkey"].(map[string]any)["post"].(map[string]any)
+	encryptSchema := encryptPost["requestBody"].(map[string]any)["content"].(map[string]any)["application/json"].(map[string]any)["schema"].(map[string]any)
+	if encryptSchema["$ref"] != "#/components/schemas/OperateWXDataRequest" {
+		t.Fatalf("OpenAPI /wx/encryptkey request schema = %#v", encryptSchema)
+	}
 	for _, path := range []string{"/accounts/{ref}", "/accounts/{ref}/getCode", "/accounts/{ref}/getPhoneNumber", "/accounts/{ref}/operateWxData", "/accounts/getCode", "/accounts/getPhoneNumber", "/accounts/operateWxData"} {
 		if _, ok := paths[path]; ok {
 			t.Fatalf("OpenAPI still exposes old account feature route %s", path)
@@ -128,6 +134,13 @@ func TestHandlerServesGinRoutesAndSwaggerDocs(t *testing.T) {
 		if recorder.Code != http.StatusMethodNotAllowed {
 			t.Fatalf("GET %s status = %d, want %d", path, recorder.Code, http.StatusMethodNotAllowed)
 		}
+	}
+	encryptKey := httptest.NewRecorder()
+	encryptKeyRequest := httptest.NewRequest(http.MethodPost, "/wx/encryptkey", strings.NewReader(`{"ref":"1","app_id":"wx0000000000000000"}`))
+	encryptKeyRequest.Header.Set("Content-Type", "application/json")
+	handler.ServeHTTP(encryptKey, encryptKeyRequest)
+	if encryptKey.Code != http.StatusBadRequest || !strings.Contains(encryptKey.Body.String(), "payload is required") {
+		t.Fatalf("POST /wx/encryptkey without payload = %d %s", encryptKey.Code, encryptKey.Body.String())
 	}
 	userinfo := httptest.NewRecorder()
 	handler.ServeHTTP(userinfo, httptest.NewRequest(http.MethodGet, "/wx/getuserinfo", nil))

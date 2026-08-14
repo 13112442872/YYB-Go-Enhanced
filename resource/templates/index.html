@@ -889,7 +889,7 @@
       features: [
         { name: "getCode", label: "/wx/code 获取小程序 code", route: "/wx/code", requiresAppID: true },
         { name: "getUserInfo", label: "/wx/getuserinfo 用户信息", route: "/wx/getuserinfo", requiresAppID: false },
-        { name: "encryptKey", label: "/wx/encryptkey 加密 key", route: "/wx/encryptkey", requiresAppID: true },
+        { name: "encryptKey", label: "/wx/encryptkey 加密能力转发", route: "/wx/encryptkey", requiresAppID: true, needsPayload: true },
         { name: "getPhoneNumber", label: "/wx/getphonenumber 手机号", route: "/wx/getphonenumber", requiresAppID: true },
         { name: "cloud", label: "/wx/cloud 云函数", route: "/wx/cloud", requiresAppID: true, needsPayload: true },
         { name: "qrcodeauth", label: "/wx/qrcodeauth 二维码授权", route: "/wx/qrcodeauth", requiresAppID: false, requiresAccount: false },
