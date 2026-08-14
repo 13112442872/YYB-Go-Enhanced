@@ -41,6 +41,8 @@ type Config struct {
 	QingLongSecret    string
 	QingLongServer    string
 	QingLongRepo      string
+	AuthDriver        string
+	AuthDSN           string
 	AuthMySQLDSN      string
 	AdminUser         string
 	AdminPassword     string
@@ -152,10 +154,26 @@ func NewApp(cfg Config) (*App, error) {
 		quickSessions:      map[string]quickLoginSession{},
 		loginAttempts:      map[string]loginAttempt{},
 	}
-	if cfg.AuthMySQLDSN != "" {
+	authDriver := strings.ToLower(strings.TrimSpace(cfg.AuthDriver))
+	authDSN := strings.TrimSpace(cfg.AuthDSN)
+	if authDriver == "" && cfg.AuthMySQLDSN != "" {
+		authDriver = "mysql"
+		authDSN = cfg.AuthMySQLDSN
+	}
+	if authDriver != "" && authDriver != "none" {
+		if authDriver == "mysql" && authDSN == "" {
+			authDSN = cfg.AuthMySQLDSN
+		}
+		if authDriver == "sqlite" && authDSN == "" {
+			authDSN = filepath.Join(res.DB, "auth.db")
+		}
+		if authDSN == "" {
+			_ = db.Close()
+			return nil, fmt.Errorf("auth %s DSN is empty", authDriver)
+		}
 		authCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		authStore, authErr := auth.Open(authCtx, cfg.AuthMySQLDSN)
+		authStore, authErr := auth.Open(authCtx, authDriver, authDSN)
 		if authErr != nil {
 			_ = db.Close()
 			return nil, authErr

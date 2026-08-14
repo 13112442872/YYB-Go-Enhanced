@@ -13,9 +13,10 @@ import (
 
 	_ "github.com/go-sql-driver/mysql"
 	"golang.org/x/crypto/bcrypt"
+	_ "modernc.org/sqlite"
 )
 
-const schema = `
+const mysqlSchema = `
 CREATE TABLE IF NOT EXISTS users (
     id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
     username VARCHAR(64) NOT NULL UNIQUE,
@@ -49,10 +50,44 @@ CREATE TABLE IF NOT EXISTS auth_settings (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 `
 
+const sqliteSchema = `
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE,
+    display_name TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('admin','user')),
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    last_login_at DATETIME NULL,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS user_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token_hash BLOB NOT NULL UNIQUE,
+    user_agent TEXT NOT NULL DEFAULT '',
+    ip_address TEXT NOT NULL DEFAULT '',
+    expires_at DATETIME NOT NULL,
+    created_at DATETIME NOT NULL,
+    last_seen_at DATETIME NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON user_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_sessions_expires ON user_sessions(expires_at);
+
+CREATE TABLE IF NOT EXISTS auth_settings (
+    setting_key TEXT PRIMARY KEY,
+    setting_value TEXT NOT NULL,
+    updated_at DATETIME NOT NULL
+);
+`
+
 var ErrInvalidCredentials = errors.New("用户名或密码错误")
 
 type Store struct {
-	db *sql.DB
+	db     *sql.DB
+	driver string
 }
 
 type User struct {
@@ -76,17 +111,33 @@ type Session struct {
 	LastSeenAt time.Time `json:"last_seen_at"`
 }
 
-func Open(ctx context.Context, dsn string) (*Store, error) {
-	db, err := sql.Open("mysql", dsn)
+func Open(ctx context.Context, driver, dsn string) (*Store, error) {
+	driver = strings.ToLower(strings.TrimSpace(driver))
+	if driver != "mysql" && driver != "sqlite" {
+		return nil, fmt.Errorf("unsupported auth database driver %q", driver)
+	}
+	db, err := sql.Open(driver, dsn)
 	if err != nil {
 		return nil, err
 	}
-	db.SetMaxOpenConns(10)
-	db.SetMaxIdleConns(5)
-	db.SetConnMaxLifetime(30 * time.Minute)
+	if driver == "sqlite" {
+		db.SetMaxOpenConns(1)
+	} else {
+		db.SetMaxOpenConns(10)
+		db.SetMaxIdleConns(5)
+		db.SetConnMaxLifetime(30 * time.Minute)
+	}
 	if err = db.PingContext(ctx); err != nil {
 		_ = db.Close()
-		return nil, fmt.Errorf("connect auth mysql: %w", err)
+		return nil, fmt.Errorf("connect auth %s: %w", driver, err)
+	}
+	schema := mysqlSchema
+	if driver == "sqlite" {
+		schema = sqliteSchema
+		if _, err = db.ExecContext(ctx, "PRAGMA foreign_keys = ON"); err != nil {
+			_ = db.Close()
+			return nil, fmt.Errorf("configure auth sqlite: %w", err)
+		}
 	}
 	for _, statement := range strings.Split(schema, ";") {
 		statement = strings.TrimSpace(statement)
@@ -95,16 +146,19 @@ func Open(ctx context.Context, dsn string) (*Store, error) {
 		}
 		if _, err = db.ExecContext(ctx, statement); err != nil {
 			_ = db.Close()
-			return nil, fmt.Errorf("migrate auth mysql: %w", err)
+			return nil, fmt.Errorf("migrate auth %s: %w", driver, err)
 		}
 	}
-	return &Store{db: db}, nil
+	return &Store{db: db, driver: driver}, nil
 }
 
 func (s *Store) Close() error { return s.db.Close() }
 
 func (s *Store) BootstrapAdmin(ctx context.Context, username, password string) error {
 	username = normalizeUsername(username)
+	if username == "" && password == "" {
+		return nil
+	}
 	if username == "" || password == "" {
 		return errors.New("首次管理员用户名和密码不能为空")
 	}
@@ -124,6 +178,40 @@ func (s *Store) BootstrapAdmin(ctx context.Context, username, password string) e
         (username, display_name, password_hash, role, enabled, created_at, updated_at)
         VALUES (?, ?, ?, 'admin', TRUE, ?, ?)`, username, username, string(hash), now, now)
 	return err
+}
+
+// RegisterUser promotes only the first registered account to administrator.
+// The role decision and insert happen in one statement, so concurrent requests
+// cannot both observe an empty users table.
+func (s *Store) RegisterUser(ctx context.Context, username, displayName, password string) (*User, error) {
+	username = normalizeUsername(username)
+	displayName = strings.TrimSpace(displayName)
+	if err := ValidateUsername(username); err != nil {
+		return nil, err
+	}
+	if displayName == "" || len([]rune(displayName)) > 100 {
+		return nil, errors.New("显示名长度应为 1-100 个字符")
+	}
+	if err := ValidatePassword(password); err != nil {
+		return nil, err
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), 12)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	result, err := s.db.ExecContext(ctx, `INSERT INTO users
+        (username, display_name, password_hash, role, enabled, created_at, updated_at)
+        VALUES (?, ?, ?, CASE WHEN (SELECT COUNT(*) FROM users)=0 THEN 'admin' ELSE 'user' END, TRUE, ?, ?)`,
+		username, displayName, string(hash), now, now)
+	if err != nil {
+		if isDuplicateError(err) {
+			return nil, errors.New("用户名已存在")
+		}
+		return nil, err
+	}
+	id, _ := result.LastInsertId()
+	return s.GetUser(ctx, id)
 }
 
 func (s *Store) CreateUser(ctx context.Context, username, displayName, password, role string) (*User, error) {
@@ -150,7 +238,7 @@ func (s *Store) CreateUser(ctx context.Context, username, displayName, password,
         (username, display_name, password_hash, role, enabled, created_at, updated_at)
         VALUES (?, ?, ?, ?, TRUE, ?, ?)`, username, displayName, string(hash), role, now, now)
 	if err != nil {
-		if strings.Contains(strings.ToLower(err.Error()), "duplicate") {
+		if isDuplicateError(err) {
 			return nil, errors.New("用户名已存在")
 		}
 		return nil, err
@@ -380,8 +468,13 @@ func (s *Store) SetRegistrationEnabled(ctx context.Context, enabled bool) error 
 	if enabled {
 		value = "true"
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO auth_settings (setting_key, setting_value, updated_at) VALUES ('registration_enabled', ?, ?)
-        ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value), updated_at=VALUES(updated_at)`, value, time.Now().UTC())
+	query := `INSERT INTO auth_settings (setting_key, setting_value, updated_at) VALUES ('registration_enabled', ?, ?)
+        ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value), updated_at=VALUES(updated_at)`
+	if s.driver == "sqlite" {
+		query = `INSERT INTO auth_settings (setting_key, setting_value, updated_at) VALUES ('registration_enabled', ?, ?)
+            ON CONFLICT(setting_key) DO UPDATE SET setting_value=excluded.setting_value, updated_at=excluded.updated_at`
+	}
+	_, err := s.db.ExecContext(ctx, query, value, time.Now().UTC())
 	return err
 }
 
@@ -405,6 +498,10 @@ func ValidatePassword(value string) error {
 }
 
 func normalizeUsername(value string) string { return strings.ToLower(strings.TrimSpace(value)) }
+func isDuplicateError(err error) bool {
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "duplicate") || strings.Contains(message, "unique constraint")
+}
 func trimTo(value string, max int) string {
 	if len(value) > max {
 		return value[:max]

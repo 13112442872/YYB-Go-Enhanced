@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -62,6 +63,16 @@ func main() {
 		clientSecret = getEnvWithFallback("QL_CLIENT_SECRET", "DAIDAI_APP_SECRET")
 	}
 
+	legacyAuthDSN := os.Getenv("YYB_AUTH_MYSQL_DSN")
+	authDriver := strings.ToLower(strings.TrimSpace(os.Getenv("YYB_AUTH_DRIVER")))
+	if authDriver == "" {
+		if legacyAuthDSN != "" {
+			authDriver = "mysql"
+		} else {
+			authDriver = "sqlite"
+		}
+	}
+
 	cfg := httpapi.Config{
 		ResourceRoot:      *resourceRoot,
 		DBFilename:        *dbFilename,
@@ -79,7 +90,9 @@ func main() {
 		QingLongSecret:    clientSecret,
 		QingLongServer:    os.Getenv("YYB_QINGLONG_SERVER"),
 		QingLongRepo:      os.Getenv("YYB_QINGLONG_REPO"),
-		AuthMySQLDSN:      os.Getenv("YYB_AUTH_MYSQL_DSN"),
+		AuthDriver:        authDriver,
+		AuthDSN:           os.Getenv("YYB_AUTH_DSN"),
+		AuthMySQLDSN:      legacyAuthDSN,
 		AdminUser:         getEnvWithFallback("YYB_ADMIN_USER", "YYB_WEB_USER"),
 		AdminPassword:     getEnvWithFallback("YYB_ADMIN_PASSWORD", "YYB_WEB_PASSWORD"),
 		CookieSecure:      os.Getenv("YYB_COOKIE_SECURE") == "true",

@@ -166,7 +166,7 @@ func (a *App) handleRegister(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "请求格式错误")
 		return
 	}
-	user, err := a.auth.CreateUser(r.Context(), body.Username, body.DisplayName, body.Password, "user")
+	user, err := a.auth.RegisterUser(r.Context(), body.Username, body.DisplayName, body.Password)
 	if err != nil {
 		writeError(w, 400, err.Error())
 		return
@@ -177,7 +177,11 @@ func (a *App) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	setSessionCookie(w, token, a.cfg.CookieSecure, a.cfg.SessionDuration)
-	writeJSON(w, 201, map[string]any{"user": user, "next": "/settings"})
+	next := "/settings"
+	if user.Role == "admin" {
+		next = "/"
+	}
+	writeJSON(w, 201, map[string]any{"user": user, "next": next})
 }
 
 func (a *App) handleLogout(w http.ResponseWriter, r *http.Request) {

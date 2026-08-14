@@ -4,6 +4,7 @@
 
 ## 2026-08-14
 
+- Web 用户与会话默认改用持久化 SQLite，首个注册账号自动成为管理员；支持通过 `YYB_AUTH_DRIVER` 切换 MySQL 或关闭认证，并继续兼容旧的 `YYB_AUTH_MYSQL_DSN`。
 - 微信 HTTPDNS 无响应或缺少 LongLink 候选时，回退到官方 `longcloud.weixin.com:443`，避免在普通 DNS 和 443 端口可用时直接返回 502。
 - `/wx/encryptkey` 改为必须提供目标业务的真实 `payload`，不再发送已知无效的空 `getUserEncryptKey` 请求；同步更新控制台与 OpenAPI。
 - 补充文章会话、文章扩展、点赞和业务 `encryptData` 的调用边界，明确兼容路由不会自动推导业务参数。

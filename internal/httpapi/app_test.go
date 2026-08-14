@@ -148,3 +148,57 @@ func TestHandlerServesGinRoutesAndSwaggerDocs(t *testing.T) {
 		t.Fatalf("GET /wx/getuserinfo without ref status = %d, want %d", userinfo.Code, http.StatusBadRequest)
 	}
 }
+
+func TestSQLiteAuthFirstRegistrationAndUnauthorizedAPI(t *testing.T) {
+	t.Setenv("GIN_MODE", "test")
+	app, err := NewApp(Config{
+		ResourceRoot: t.TempDir(),
+		AuthDriver:   "sqlite",
+	})
+	if err != nil {
+		t.Fatalf("NewApp() error = %v", err)
+	}
+	defer app.Close()
+	handler := app.Handler()
+
+	unauthorized := httptest.NewRecorder()
+	handler.ServeHTTP(unauthorized, httptest.NewRequest(http.MethodGet, "/api/auth/me", nil))
+	if unauthorized.Code != http.StatusUnauthorized {
+		t.Fatalf("GET /api/auth/me status = %d, want %d", unauthorized.Code, http.StatusUnauthorized)
+	}
+
+	register := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/register", strings.NewReader(`{"username":"owner","displayName":"Owner","password":"owner-password"}`))
+	request.Header.Set("Content-Type", "application/json")
+	handler.ServeHTTP(register, request)
+	if register.Code != http.StatusCreated {
+		t.Fatalf("POST /register status = %d body = %s", register.Code, register.Body.String())
+	}
+	var body struct {
+		Code int `json:"code"`
+		Data struct {
+			Next string `json:"next"`
+			User struct {
+				Role string `json:"role"`
+			} `json:"user"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(register.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode register response: %v", err)
+	}
+	if body.Code != 0 || body.Data.User.Role != "admin" || body.Data.Next != "/" {
+		t.Fatalf("POST /register body = %#v", body)
+	}
+	result := register.Result()
+	if len(result.Cookies()) != 1 {
+		t.Fatalf("POST /register cookies = %d, want 1", len(result.Cookies()))
+	}
+
+	index := httptest.NewRecorder()
+	indexRequest := httptest.NewRequest(http.MethodGet, "/", nil)
+	indexRequest.AddCookie(result.Cookies()[0])
+	handler.ServeHTTP(index, indexRequest)
+	if index.Code != http.StatusOK {
+		t.Fatalf("authenticated GET / status = %d", index.Code)
+	}
+}
