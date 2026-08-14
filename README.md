@@ -15,7 +15,7 @@
 - SQLite 持久化账号与协议会话
 - 独立登录与注册页面，支持管理员、普通用户、用户启停、密码重置和会话管理
 - 统一管理平台外壳：固定侧栏、页面顶栏、用户身份区和移动端抽屉导航，账号、运行、用户与设置不再是相互独立的页面
-- 用户、角色和网页登录会话存储在 MySQL；微信协议数据继续使用 SQLite
+- 用户、角色和网页登录会话默认存储在 SQLite，也可切换到 MySQL；微信协议数据继续使用独立 SQLite
 - 支持与青龙容器共享 Docker 网络
 - 账号运行管理：每个微信账号独立创建、启停和运行青龙脚本，并查看日志
 - 运行日志使用独立抽屉连续刷新，保持阅读位置；支持超过 2 MB 的青龙日志索引响应
@@ -44,27 +44,17 @@ docker network create qinglong_default
 cp .env.example .env
 ```
 
-先在已有 MySQL 中创建独立数据库和最小权限用户：
-
-```sql
-CREATE DATABASE yyb_go CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER 'yyb_go'@'%' IDENTIFIED BY '替换为随机强密码';
-GRANT ALL PRIVILEGES ON yyb_go.* TO 'yyb_go'@'%';
-FLUSH PRIVILEGES;
-```
-
-编辑 `.env`，至少配置 MySQL DSN 和首次管理员：
+公开版本默认使用 SQLite，无需单独部署数据库。编辑 `.env` 时保留：
 
 ```dotenv
-YYB_AUTH_MYSQL_DSN=yyb_go:数据库密码@tcp(youchat-mysql:3306)/yyb_go?charset=utf8mb4&parseTime=true&loc=UTC
-YYB_ADMIN_USER=admin
-YYB_ADMIN_PASSWORD=替换为强密码
+YYB_AUTH_DRIVER=sqlite
+YYB_AUTH_DSN=
 YYB_COOKIE_SECURE=false
 ```
 
-`YYB_COOKIE_SECURE` 仅在控制台通过 HTTPS 访问时设为 `true`。首次启动会自动创建表和第一个管理员；数据库已有用户后，不会使用环境变量覆盖管理员密码。旧版 `YYB_WEB_USER`、`YYB_WEB_PASSWORD` 仍可作为直接运行程序时的初始化回退变量。
+认证数据库默认保存为持久化卷中的 `resource/db/auth.db`。首次打开控制台注册的第一个账号会自动成为管理员，后续注册账号为普通用户。也可以在首次启动前设置 `YYB_ADMIN_USER` 和 `YYB_ADMIN_PASSWORD` 来预先创建管理员。
 
-确保 `yyb-go` 与 MySQL 容器位于至少一个相同 Docker 网络，再构建并启动：
+构建并启动：
 
 ```bash
 docker compose up -d --build
@@ -72,13 +62,22 @@ docker compose up -d --build
 
 默认访问地址为 `http://服务器IP:8000`。Nginx Basic Auth 已由应用内登录页面替代。
 
+需要复用 MySQL 时，设置以下变量并确保 `yyb-go` 与 MySQL 容器位于同一 Docker 网络：
+
+```dotenv
+YYB_AUTH_DRIVER=mysql
+YYB_AUTH_DSN=yyb_go:数据库密码@tcp(mysql:3306)/yyb_go?charset=utf8mb4&parseTime=true&loc=UTC
+```
+
+旧变量 `YYB_AUTH_MYSQL_DSN` 继续兼容：只设置该变量时会自动选择 MySQL，不会迁移或覆盖已有用户。`YYB_AUTH_DRIVER=none` 可关闭网页登录认证，仅建议用于受保护的本机调试。`YYB_COOKIE_SECURE` 仅在 HTTPS 反代下设为 `true`。
+
 ## Magisk 模块（实验性）
 
 `feature/magisk-module` 分支提供 Android ARM64 的 Magisk 常驻模块，开机后由 `late_start service` 直接运行 YYB Go，不依赖 Termux。默认控制台为 `http://127.0.0.1:8000`，账号数据持久化在 `/data/adb/yyb-go`。构建、安装和安全限制见 [Magisk 模块文档](docs/magisk.md)。该模块完成了交叉编译和安装包结构验证，正式发布前仍需在 Root 真机上测试。
 
 ### 用户与权限
 
-- 第一个管理员由 `YYB_ADMIN_USER`、`YYB_ADMIN_PASSWORD` 初始化。
+- 第一个管理员可由 `YYB_ADMIN_USER`、`YYB_ADMIN_PASSWORD` 初始化；未设置时首个注册账号成为管理员。
 - 后续注册账号默认为普通用户，只能进入个人设置、修改密码和管理自己的会话。
 - 管理员可访问微信账号、扫码、协议调试、面板运行管理和用户管理，并可关闭公开注册。
 - `/wx/*`、`/wxapp/*` 保持给青龙脚本调用，不要求浏览器 Cookie；不要直接将这些协议接口暴露到公网。
