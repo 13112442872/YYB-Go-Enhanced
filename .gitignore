@@ -11,3 +11,4 @@ nginx.htpasswd
 __pycache__/
 *.py[cod]
 /yyb-go
+/dist/

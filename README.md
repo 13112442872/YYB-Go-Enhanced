@@ -72,6 +72,10 @@ docker compose up -d --build
 
 默认访问地址为 `http://服务器IP:8000`。Nginx Basic Auth 已由应用内登录页面替代。
 
+## Magisk 模块（实验性）
+
+`feature/magisk-module` 分支提供 Android ARM64 的 Magisk 常驻模块，开机后由 `late_start service` 直接运行 YYB Go，不依赖 Termux。默认控制台为 `http://127.0.0.1:8000`，账号数据持久化在 `/data/adb/yyb-go`。构建、安装和安全限制见 [Magisk 模块文档](docs/magisk.md)。该模块完成了交叉编译和安装包结构验证，正式发布前仍需在 Root 真机上测试。
+
 ### 用户与权限
 
 - 第一个管理员由 `YYB_ADMIN_USER`、`YYB_ADMIN_PASSWORD` 初始化。
