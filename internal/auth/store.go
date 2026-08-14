@@ -156,10 +156,10 @@ func (s *Store) Close() error { return s.db.Close() }
 
 func (s *Store) BootstrapAdmin(ctx context.Context, username, password string) error {
 	username = normalizeUsername(username)
-	if username == "" && password == "" {
+	if password == "" {
 		return nil
 	}
-	if username == "" || password == "" {
+	if username == "" {
 		return errors.New("首次管理员用户名和密码不能为空")
 	}
 	var count int
