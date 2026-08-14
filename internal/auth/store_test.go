@@ -19,6 +19,9 @@ func TestSQLiteAuthenticationLifecycle(t *testing.T) {
 	if err := store.BootstrapAdmin(ctx, "", ""); err != nil {
 		t.Fatalf("BootstrapAdmin() without credentials error = %v", err)
 	}
+	if err := store.BootstrapAdmin(ctx, "admin", ""); err != nil {
+		t.Fatalf("BootstrapAdmin() with blank password error = %v", err)
+	}
 	admin, err := store.RegisterUser(ctx, "owner", "Owner", "owner-password")
 	if err != nil {
 		t.Fatalf("RegisterUser(first) error = %v", err)
