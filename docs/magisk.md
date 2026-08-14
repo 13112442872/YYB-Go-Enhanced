@@ -7,6 +7,9 @@ Starting with `0.1.1`, the ZIP contains Magisk's standard installer entry and
 is explicitly marked as a service-only module. Install it directly from the
 official Magisk app; do not extract it or install it through a third-party app.
 
+Version `0.1.2` fixes the browser redirect loop when the module runs without a
+MySQL authentication DSN, which is the default phone-only configuration.
+
 ## Current scope
 
 - Android arm64 only.
@@ -26,7 +29,7 @@ published as a stable release.
 The build host needs Go 1.23+, Bash, and `zip`.
 
 ```sh
-VERSION=0.1.1 VERSION_CODE=2 ./scripts/build-magisk.sh arm64
+VERSION=0.1.2 VERSION_CODE=3 ./scripts/build-magisk.sh arm64
 ```
 
 The ZIP is written to `dist/` and can be installed from the Magisk app.

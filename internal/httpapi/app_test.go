@@ -135,3 +135,49 @@ func TestHandlerServesGinRoutesAndSwaggerDocs(t *testing.T) {
 		t.Fatalf("GET /wx/getuserinfo without ref status = %d, want %d", userinfo.Code, http.StatusBadRequest)
 	}
 }
+
+func TestAuthMeWithoutConfiguredAuthentication(t *testing.T) {
+	t.Setenv("GIN_MODE", "test")
+
+	app, err := NewApp(Config{
+		ResourceRoot:   t.TempDir(),
+		RequestTimeout: time.Second,
+		AvatarTimeout:  time.Second,
+		SessionTTL:     time.Minute,
+		QRSessionTTL:   time.Minute,
+	})
+	if err != nil {
+		t.Fatalf("NewApp() error = %v", err)
+	}
+	defer app.Close()
+
+	recorder := httptest.NewRecorder()
+	app.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/auth/me", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("GET /api/auth/me status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+	var response struct {
+		Code int `json:"code"`
+		Data struct {
+			AuthEnabled bool `json:"auth_enabled"`
+			User        struct {
+				Username    string `json:"username"`
+				DisplayName string `json:"display_name"`
+				Role        string `json:"role"`
+			} `json:"user"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode /api/auth/me JSON: %v", err)
+	}
+	if response.Code != 0 || response.Data.AuthEnabled || response.Data.User.Username != "local" || response.Data.User.DisplayName == "" || response.Data.User.Role != "admin" {
+		t.Fatalf("GET /api/auth/me body = %#v", response)
+	}
+	for _, path := range []string{"/settings", "/users"} {
+		page := httptest.NewRecorder()
+		app.Handler().ServeHTTP(page, httptest.NewRequest(http.MethodGet, path, nil))
+		if page.Code != http.StatusSeeOther || page.Header().Get("Location") != "/" {
+			t.Fatalf("GET %s status = %d, Location = %q", path, page.Code, page.Header().Get("Location"))
+		}
+	}
+}

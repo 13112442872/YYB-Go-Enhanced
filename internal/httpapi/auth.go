@@ -195,6 +195,10 @@ func (a *App) handleLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
+	if a.auth == nil {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
 	if r.Method != http.MethodGet {
 		writeError(w, 405, "method not allowed")
 		return
@@ -202,6 +206,10 @@ func (a *App) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 	serveFileOrText(w, r, filepath.Join(a.resources.Templates, "settings.html"), fallbackSettingsHTML)
 }
 func (a *App) handleUsersPage(w http.ResponseWriter, r *http.Request) {
+	if a.auth == nil {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
 	if !requireAdmin(w, r) {
 		return
 	}
@@ -213,12 +221,29 @@ func (a *App) handleUsersPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleAuthMe(w http.ResponseWriter, r *http.Request) {
-	user, session := currentAuth(r)
 	if r.Method != http.MethodGet {
 		writeError(w, 405, "method not allowed")
 		return
 	}
-	writeJSON(w, 200, map[string]any{"user": user, "session_id": session.ID})
+	if a.auth == nil {
+		writeJSON(w, 200, map[string]any{
+			"auth_enabled": false,
+			"session_id":   "",
+			"user": map[string]any{
+				"username":     "local",
+				"display_name": "本机管理员",
+				"role":         "admin",
+				"enabled":      true,
+			},
+		})
+		return
+	}
+	user, session := currentAuth(r)
+	if user == nil || session == nil {
+		writeError(w, http.StatusUnauthorized, "请先登录")
+		return
+	}
+	writeJSON(w, 200, map[string]any{"auth_enabled": true, "user": user, "session_id": session.ID})
 }
 func (a *App) handleProfile(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPut {
