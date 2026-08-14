@@ -7,8 +7,10 @@ Starting with `0.1.1`, the ZIP contains Magisk's standard installer entry and
 is explicitly marked as a service-only module. Install it directly from the
 official Magisk app; do not extract it or install it through a third-party app.
 
-Version `0.1.2` fixes the browser redirect loop when the module runs without a
-MySQL authentication DSN, which is the default phone-only configuration.
+Version `0.1.2` fixes the browser redirect loop when authentication is disabled.
+Version `0.1.3` defaults browser authentication to local SQLite and adds an
+explicit DNS resolver fallback for Android ROMs that expose an unavailable
+`[::1]:53` resolver to static Go programs.
 
 ## Current scope
 
@@ -17,8 +19,8 @@ MySQL authentication DSN, which is the default phone-only configuration.
 - The console listens on `127.0.0.1:8000` by default.
 - Protocol accounts, logs, configuration, avatars, and QR files persist under
   `/data/adb/yyb-go` across module upgrades.
-- Browser authentication remains optional. It requires a reachable external
-  MySQL server when enabled.
+- Browser authentication uses local SQLite by default and can optionally use a
+  reachable external MySQL server.
 
 The module has been cross-compiled and structurally validated, but it still
 needs installation testing on a rooted Android device before it should be
@@ -29,7 +31,7 @@ published as a stable release.
 The build host needs Go 1.23+, Bash, and `zip`.
 
 ```sh
-VERSION=0.1.2 VERSION_CODE=3 ./scripts/build-magisk.sh arm64
+VERSION=0.1.3 VERSION_CODE=4 ./scripts/build-magisk.sh arm64
 ```
 
 The ZIP is written to `dist/` and can be installed from the Magisk app.
@@ -67,12 +69,17 @@ security boundary. Setting `HOST=0.0.0.0` also exposes the console and protocol
 API to the local network. Do not do that without firewall rules or browser
 authentication.
 
-Browser login is enabled only when `YYB_AUTH_MYSQL_DSN` points to a reachable
-MySQL instance. With no MySQL DSN, the local console opens without a login page.
+Browser login uses `/data/adb/yyb-go/resource/db/auth.db` by default. If no
+initial password is configured, open `/register`; the first registered account
+becomes administrator. Existing MySQL deployments remain compatible through
+`YYB_AUTH_MYSQL_DSN`, or can use `YYB_AUTH_DRIVER=mysql` with `YYB_AUTH_DSN`.
+Set `YYB_AUTH_DRIVER=none` only when intentionally disabling browser login.
 
-If WeChat endpoints do not resolve on a specific Android ROM, collect
-`/data/adb/yyb-go/yyb-go.log`, the Android version, ROM name, and Magisk version.
-Android DNS behavior differs between vendors and needs device-level testing.
+The module defaults to `YYB_DNS_SERVERS=223.5.5.5:53,119.29.29.29:53`. This
+avoids static Go resolving through Android's unavailable `[::1]:53` stub. The
+setting accepts comma-separated IP addresses with optional ports. Remove it to
+use the system resolver, or replace it when the current network blocks direct
+DNS traffic.
 
 ## Uninstall behavior
 

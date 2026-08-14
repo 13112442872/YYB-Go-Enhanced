@@ -4,6 +4,7 @@
 
 ## 2026-08-14
 
+- Magisk 运行时增加可配置 DNS 解析器，默认避开 Android 静态程序无法访问的 `[::1]:53`，修复微信登录二维码域名解析失败。
 - Web 用户与会话默认改用持久化 SQLite，首个注册账号自动成为管理员；支持通过 `YYB_AUTH_DRIVER` 切换 MySQL 或关闭认证，并继续兼容旧的 `YYB_AUTH_MYSQL_DSN`。
 - 微信 HTTPDNS 无响应或缺少 LongLink 候选时，回退到官方 `longcloud.weixin.com:443`，避免在普通 DNS 和 443 端口可用时直接返回 502。
 - `/wx/encryptkey` 改为必须提供目标业务的真实 `payload`，不再发送已知无效的空 `getUserEncryptKey` 请求；同步更新控制台与 OpenAPI。

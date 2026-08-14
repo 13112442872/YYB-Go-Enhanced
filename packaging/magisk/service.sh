@@ -23,6 +23,8 @@ fi
 : "${PORT:=8000}"
 : "${KEEPALIVE_INTERVAL:=30m}"
 : "${KEEPALIVE_AHEAD:=45m}"
+: "${YYB_DNS_SERVERS:=223.5.5.5:53,119.29.29.29:53}"
+: "${YYB_AUTH_DRIVER:=sqlite}"
 
 if [ -f "$PID_FILE" ]; then
   old_pid=$(cat "$PID_FILE" 2>/dev/null)
@@ -37,7 +39,9 @@ fi
 export PANEL_TYPE QL_URL QL_CLIENT_ID QL_CLIENT_SECRET
 export DAIDAI_URL DAIDAI_APP_KEY DAIDAI_APP_SECRET
 export YYB_QINGLONG_SERVER YYB_QINGLONG_REPO
-export YYB_AUTH_MYSQL_DSN YYB_ADMIN_USER YYB_ADMIN_PASSWORD
+export YYB_DNS_SERVERS
+export YYB_AUTH_DRIVER YYB_AUTH_DSN YYB_AUTH_MYSQL_DSN
+export YYB_ADMIN_USER YYB_ADMIN_PASSWORD
 export YYB_COOKIE_SECURE
 export GIN_MODE=release
 export SSL_CERT_DIR=/system/etc/security/cacerts
@@ -53,7 +57,7 @@ if [ -n "$TCP_PROXY" ]; then
   set -- "$@" -tcp-proxy "$TCP_PROXY"
 fi
 
-if [ "$HOST" != "127.0.0.1" ] && [ "$HOST" != "localhost" ] && [ -z "$YYB_AUTH_MYSQL_DSN" ]; then
+if [ "$HOST" != "127.0.0.1" ] && [ "$HOST" != "localhost" ] && [ "$YYB_AUTH_DRIVER" = "none" ]; then
   echo "$(date '+%F %T') WARNING: YYB Go is exposed without browser authentication" >> "$LOG_FILE"
 fi
 

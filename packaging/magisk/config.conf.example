@@ -7,6 +7,10 @@ KEEPALIVE_INTERVAL=30m
 KEEPALIVE_AHEAD=45m
 TCP_PROXY=
 
+# Static Android builds may not be able to use netd's loopback DNS stub.
+# Leave this default in place if logs mention [::1]:53 connection refused.
+YYB_DNS_SERVERS=223.5.5.5:53,119.29.29.29:53
+
 # Optional QingLong or daidai-panel integration.
 PANEL_TYPE=qinglong
 QL_URL=
@@ -18,8 +22,10 @@ DAIDAI_APP_SECRET=
 YYB_QINGLONG_SERVER=
 YYB_QINGLONG_REPO=
 
-# Browser authentication is enabled only when a reachable MySQL DSN is set.
-# Keep HOST=127.0.0.1 when this is empty.
+# Browser authentication defaults to a local SQLite database. The first
+# registered account becomes administrator when no initial password is set.
+YYB_AUTH_DRIVER=sqlite
+YYB_AUTH_DSN=
 YYB_AUTH_MYSQL_DSN=
 YYB_ADMIN_USER=admin
 YYB_ADMIN_PASSWORD=
