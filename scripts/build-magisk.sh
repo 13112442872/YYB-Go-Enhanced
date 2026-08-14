@@ -12,7 +12,7 @@ if [[ "$ARCH" != "arm64" ]]; then
   exit 2
 fi
 
-for command_name in go zip; do
+for command_name in go zip unzip; do
   command -v "$command_name" >/dev/null 2>&1 || {
     echo "missing build dependency: $command_name" >&2
     exit 1
@@ -43,8 +43,44 @@ CGO_ENABLED=0 GOOS=android GOARCH=arm64 \
 sed -i "s/^version=.*/version=$VERSION/" "$STAGE/module.prop"
 sed -i "s/^versionCode=.*/versionCode=$VERSION_CODE/" "$STAGE/module.prop"
 chmod 0755 "$STAGE"/*.sh "$STAGE/bin/yyb-go"
+chmod 0755 "$STAGE/META-INF/com/google/android/update-binary"
 
 OUTPUT="$OUT_DIR/yyb-go-magisk-arm64-$VERSION.zip"
 rm -f "$OUTPUT"
-(cd "$STAGE" && zip -q -r "$OUTPUT" .)
+(cd "$STAGE" && zip -q -X -9 "$OUTPUT" \
+  module.prop \
+  META-INF/com/google/android/update-binary \
+  META-INF/com/google/android/updater-script \
+  customize.sh skip_mount action.sh service.sh stop.sh uninstall.sh \
+  config.conf.example)
+(cd "$STAGE" && zip -q -X -9 -r "$OUTPUT" bin resource)
+
+required_entries=(
+  module.prop
+  META-INF/com/google/android/update-binary
+  META-INF/com/google/android/updater-script
+  customize.sh
+  skip_mount
+  service.sh
+  bin/yyb-go
+)
+archive_entries=$(unzip -Z1 "$OUTPUT")
+for required_entry in "${required_entries[@]}"; do
+  grep -Fxq "$required_entry" <<< "$archive_entries" || {
+    echo "invalid Magisk package: missing $required_entry" >&2
+    exit 1
+  }
+done
+
+if unzip -p "$OUTPUT" module.prop | grep -q $'\r'; then
+  echo "invalid Magisk package: module.prop must use LF line endings" >&2
+  exit 1
+fi
+
+if grep -Eq '^resource/(db|qr|avatars)/.+' <<< "$archive_entries"; then
+  echo "invalid Magisk package: runtime account data must not be packaged" >&2
+  exit 1
+fi
+
+unzip -tq "$OUTPUT" >/dev/null
 echo "$OUTPUT"

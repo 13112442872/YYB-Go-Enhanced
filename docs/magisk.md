@@ -3,6 +3,10 @@
 This package runs YYB Go directly from Magisk's late-start service stage. It
 does not require Termux to remain open.
 
+Starting with `0.1.1`, the ZIP contains Magisk's standard installer entry and
+is explicitly marked as a service-only module. Install it directly from the
+official Magisk app; do not extract it or install it through a third-party app.
+
 ## Current scope
 
 - Android arm64 only.
@@ -22,10 +26,14 @@ published as a stable release.
 The build host needs Go 1.23+, Bash, and `zip`.
 
 ```sh
-VERSION=0.1.0 VERSION_CODE=1 ./scripts/build-magisk.sh arm64
+VERSION=0.1.1 VERSION_CODE=2 ./scripts/build-magisk.sh arm64
 ```
 
 The ZIP is written to `dist/` and can be installed from the Magisk app.
+
+If `0.1.0` was installed by a third-party module tool and the Magisk module
+list keeps refreshing, remove that installation in the same tool and reboot
+first. Then install `0.1.1` from the official Magisk app and reboot again.
 
 ## Runtime
 
