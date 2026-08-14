@@ -16,6 +16,18 @@ if [ ! -f "$CONFIG_FILE" ]; then
   chmod 0600 "$CONFIG_FILE"
 fi
 
+# Older Windows-built packages could copy CRLF into the persistent config.
+# Normalize it before sourcing so values such as PORT do not end in "\r".
+CONFIG_TMP="$CONFIG_FILE.tmp.$$"
+if tr -d '\r' < "$CONFIG_FILE" > "$CONFIG_TMP"; then
+  chmod 0600 "$CONFIG_TMP"
+  mv -f "$CONFIG_TMP" "$CONFIG_FILE"
+else
+  rm -f "$CONFIG_TMP"
+  echo "$(date '+%F %T') ERROR: failed to normalize $CONFIG_FILE" >> "$LOG_FILE"
+  exit 1
+fi
+
 # shellcheck disable=SC1090
 . "$CONFIG_FILE"
 

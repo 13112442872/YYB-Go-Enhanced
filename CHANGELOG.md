@@ -4,6 +4,7 @@
 
 ## 2026-08-14
 
+- Magisk v0.1.4 修复 Windows 打包导致 `config.conf.example` 使用 CRLF、`PORT` 被解析为 `8000\r` 而无法启动的问题；启动时会自动修复已有持久化配置，并扩大安装包换行检查范围。
 - Magisk 运行时增加可配置 DNS 解析器，默认避开 Android 静态程序无法访问的 `[::1]:53`，修复微信登录二维码域名解析失败。
 - Web 用户与会话默认改用持久化 SQLite，首个注册账号自动成为管理员；支持通过 `YYB_AUTH_DRIVER` 切换 MySQL 或关闭认证，并继续兼容旧的 `YYB_AUTH_MYSQL_DSN`。
 - 微信 HTTPDNS 无响应或缺少 LongLink 候选时，回退到官方 `longcloud.weixin.com:443`，避免在普通 DNS 和 443 端口可用时直接返回 502。

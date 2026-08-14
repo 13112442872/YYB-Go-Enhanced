@@ -11,7 +11,9 @@ TCP_PROXY=
 # Leave this default in place if logs mention [::1]:53 connection refused.
 YYB_DNS_SERVERS=223.5.5.5:53,119.29.29.29:53
 
-# Optional QingLong or daidai-panel integration.
+# Optional QingLong or daidai-panel integration. When panel scripts must call
+# this phone, set HOST=0.0.0.0 and YYB_QINGLONG_SERVER=phone-lan-ip:8000.
+# Reserve the phone address in the router; never expose port 8000 publicly.
 PANEL_TYPE=qinglong
 QL_URL=
 QL_CLIENT_ID=

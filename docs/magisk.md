@@ -11,6 +11,8 @@ Version `0.1.2` fixes the browser redirect loop when authentication is disabled.
 Version `0.1.3` defaults browser authentication to local SQLite and adds an
 explicit DNS resolver fallback for Android ROMs that expose an unavailable
 `[::1]:53` resolver to static Go programs.
+Version `0.1.4` repairs CRLF configuration files created by Windows packaging;
+existing `/data/adb/yyb-go/config.conf` files are normalized automatically.
 
 ## Current scope
 
@@ -31,7 +33,7 @@ published as a stable release.
 The build host needs Go 1.23+, Bash, and `zip`.
 
 ```sh
-VERSION=0.1.3 VERSION_CODE=4 ./scripts/build-magisk.sh arm64
+VERSION=0.1.4 VERSION_CODE=5 ./scripts/build-magisk.sh arm64
 ```
 
 The ZIP is written to `dist/` and can be installed from the Magisk app.
@@ -80,6 +82,27 @@ avoids static Go resolving through Android's unavailable `[::1]:53` stub. The
 setting accepts comma-separated IP addresses with optional ports. Remove it to
 use the system resolver, or replace it when the current network blocks direct
 DNS traffic.
+
+## QingLong and daidai-panel
+
+The phone can call a panel over the LAN when `QL_URL` or `DAIDAI_URL` points to
+the panel's real LAN address. For panel scripts to call YYB Go back, loopback
+listening is not sufficient. Set the phone's LAN address explicitly:
+
+```sh
+HOST=0.0.0.0
+QL_URL=http://192.168.1.10:5700
+QL_CLIENT_ID=replace-me
+QL_CLIENT_SECRET=replace-me
+YYB_QINGLONG_SERVER=192.168.1.20:8000
+```
+
+For daidai-panel, use `PANEL_TYPE=daidai`, `DAIDAI_URL`, `DAIDAI_APP_KEY`, and
+`DAIDAI_APP_SECRET`. The panel and phone must be on the same reachable network,
+and `YYB_QINGLONG_SERVER` must be the phone address as seen by the panel. Phone
+DHCP addresses can change, so reserve the address in the router. Exposing
+`HOST=0.0.0.0` also exposes protocol routes to the LAN; do not expose port 8000
+to the public Internet.
 
 ## Uninstall behavior
 

@@ -37,6 +37,22 @@ mkdir -p \
 cp -R "$ROOT/resource/static/." "$STAGE/resource/static/"
 cp -R "$ROOT/resource/templates/." "$STAGE/resource/templates/"
 
+runtime_text_entries=(
+  module.prop
+  META-INF/com/google/android/update-binary
+  META-INF/com/google/android/updater-script
+  customize.sh
+  skip_mount
+  action.sh
+  service.sh
+  stop.sh
+  uninstall.sh
+  config.conf.example
+)
+for runtime_text_entry in "${runtime_text_entries[@]}"; do
+  sed -i 's/\r$//' "$STAGE/$runtime_text_entry"
+done
+
 CGO_ENABLED=0 GOOS=android GOARCH=arm64 \
   go build -trimpath -ldflags="-s -w" -o "$STAGE/bin/yyb-go" "$ROOT/cmd/yyb-go"
 
@@ -72,10 +88,12 @@ for required_entry in "${required_entries[@]}"; do
   }
 done
 
-if unzip -p "$OUTPUT" module.prop | grep -q $'\r'; then
-  echo "invalid Magisk package: module.prop must use LF line endings" >&2
-  exit 1
-fi
+for runtime_text_entry in "${runtime_text_entries[@]}"; do
+  if unzip -p "$OUTPUT" "$runtime_text_entry" | grep -q $'\r'; then
+    echo "invalid Magisk package: $runtime_text_entry must use LF line endings" >&2
+    exit 1
+  fi
+done
 
 if grep -Eq '^resource/(db|qr|avatars)/.+' <<< "$archive_entries"; then
   echo "invalid Magisk package: runtime account data must not be packaged" >&2
