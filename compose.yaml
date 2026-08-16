@@ -37,6 +37,8 @@ services:
       - ./data/db:/app/resource/db
       - ./data/avatars:/app/resource/avatars
       - ./data/qr:/app/resource/qr
+    ports:
+      - "${YYB_BIND_ADDRESS:-0.0.0.0}:${YYB_PORT:-8000}:8000"
     networks:
       - qinglong
     healthcheck:
@@ -49,30 +51,6 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
-
-  yyb-web:
-    build:
-      context: .
-      dockerfile: Dockerfile.web
-    image: local/yyb-web:1.27
-    container_name: yyb-web
-    restart: unless-stopped
-    depends_on:
-      yyb-go:
-        condition: service_healthy
-    ports:
-      - "${YYB_BIND_ADDRESS:-0.0.0.0}:${YYB_PORT:-8000}:8080"
-    networks:
-      - qinglong
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    cap_add:
-      - CHOWN
-      - DAC_OVERRIDE
-      - SETGID
-      - SETUID
 
 networks:
   qinglong:

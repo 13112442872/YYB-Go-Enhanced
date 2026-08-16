@@ -4,6 +4,7 @@
 
 ## 2026-08-17
 
+- 默认 Compose 从 `yyb-go + nginx` 两容器收敛为单个 `yyb-go` 容器直接映射 8000；应用内登录继续负责控制台认证，外部 HTTPS 反代按需单独配置。
 - 记录 refresh token 的首次观察时间；连续使用约 25 天后在账号卡片显示“建议重扫”。保活仍只承诺刷新微信实际允许续期的凭据，不再暗示 refresh token 可无限续期。
 - 将已通过官方 Magisk 真机安装、进入控制台和扫码验证的 Android ARM64 常驻模块合入主分支；稳定包为 [Magisk v0.1.4](https://github.com/525815266/YYB-Go-Enhanced/releases/tag/magisk-v0.1.4)。
 - Magisk v0.1.4 修复 Windows 打包导致 `config.conf.example` 使用 CRLF、`PORT` 被解析为 `8000\r` 而无法启动的问题；启动时会自动修复已有持久化配置，并扩大安装包换行检查范围。

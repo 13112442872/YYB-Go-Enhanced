@@ -60,7 +60,7 @@ YYB_COOKIE_SECURE=false
 docker compose up -d --build
 ```
 
-默认访问地址为 `http://服务器IP:8000`。Nginx Basic Auth 已由应用内登录页面替代。
+默认 Compose 只启动一个 `yyb-go` 容器，访问地址为 `http://服务器IP:8000`。Nginx Basic Auth 已由应用内登录页面替代；需要 HTTPS 或公网入口时，请在项目外使用已有反向代理并限制协议接口访问。
 
 需要复用 MySQL 时，设置以下变量并确保 `yyb-go` 与 MySQL 容器位于同一 Docker 网络：
 
