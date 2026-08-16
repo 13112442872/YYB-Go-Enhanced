@@ -210,6 +210,10 @@
       background: var(--danger);
     }
 
+    .account-status.warning .status-dot {
+      background: var(--warning);
+    }
+
     .shell {
       width: min(1440px, 100%);
       margin: 0 auto;
@@ -1023,7 +1027,8 @@
       strip.innerHTML = "";
       for (const account of state.accounts) {
         const name = accountName(account);
-        const cls = statusClass(account.status);
+        const cls = account.rescan_recommended ? "warning" : statusClass(account.status);
+        const status = account.rescan_recommended ? "建议重扫" : statusText(account.status);
         const button = document.createElement("button");
         button.type = "button";
         button.className = "account-card";
@@ -1038,7 +1043,7 @@
           <span class="account-main">
             <span class="account-header">
               <span class="account-name">${escapeHTML(name)}</span>
-              <span class="account-status ${cls}"><span class="status-dot"></span>${statusText(account.status)}</span>
+              <span class="account-status ${cls}" title="${account.rescan_recommended ? "RefreshToken 已使用约 25 天，建议在失效前重新扫码" : ""}"><span class="status-dot"></span>${status}</span>
             </span>
             <span class="account-meta" title="ID: ${escapeHTML(account.id)} · UIN: ${escapeHTML(account.uin ?? "-")} · ${formatChecked(account.last_checked_at)}">ID: ${escapeHTML(account.id)} · UIN: ${escapeHTML(account.uin ?? "-")} · ${formatChecked(account.last_checked_at)}</span>
             <span class="account-openid" title="OpenID: ${escapeHTML(account.openid)}">OpenID: ${escapeHTML(account.openid)}</span>

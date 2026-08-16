@@ -113,3 +113,24 @@ VALUES(7, 1, 12345, '', '{"ready":true}', ?, 20, 20);
 		t.Fatalf("GetSetting() = %q, %v", setting, err)
 	}
 }
+
+func TestAccountPublicRecommendsRescanAfterTwentyFiveDays(t *testing.T) {
+	oldObservation := time.Now().Add(-26 * 24 * time.Hour).Unix()
+	account := &WechatAccount{Credentials: map[string]any{
+		"refreshtoken":              "refresh",
+		"refresh_token_observed_at": float64(oldObservation),
+	}}
+
+	public := account.Public()
+	if !public.RescanRecommended {
+		t.Fatal("RescanRecommended = false, want true")
+	}
+	if public.RefreshTokenObservedAt == nil || *public.RefreshTokenObservedAt != oldObservation {
+		t.Fatalf("RefreshTokenObservedAt = %#v, want %d", public.RefreshTokenObservedAt, oldObservation)
+	}
+
+	account.Credentials["refresh_token_observed_at"] = time.Now().Add(-24 * 24 * time.Hour).Unix()
+	if account.Public().RescanRecommended {
+		t.Fatal("RescanRecommended = true before 25 days")
+	}
+}

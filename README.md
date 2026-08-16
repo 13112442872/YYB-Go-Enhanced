@@ -71,6 +71,12 @@ YYB_AUTH_DSN=yyb_go:数据库密码@tcp(mysql:3306)/yyb_go?charset=utf8mb4&parse
 
 旧变量 `YYB_AUTH_MYSQL_DSN` 继续兼容：只设置该变量时会自动选择 MySQL，不会迁移或覆盖已有用户。`YYB_AUTH_DRIVER=none` 可关闭网页登录认证，仅建议用于受保护的本机调试。`YYB_COOKIE_SECURE` 仅在 HTTPS 反代下设为 `true`。
 
+## Magisk 模块
+
+Android ARM64 设备可安装 [Magisk v0.1.4](https://github.com/525815266/YYB-Go-Enhanced/releases/tag/magisk-v0.1.4)。模块由 `late_start service` 开机常驻运行，不依赖 Termux；默认控制台为 `http://127.0.0.1:8000`，账号和配置持久化在 `/data/adb/yyb-go`。v0.1.4 已通过官方 Magisk 真机安装、进入控制台和扫码验证。
+
+模块目前只提供 ARM64 构建，不支持 32 位 Android。需要让青龙或呆呆面板访问手机服务时，必须在 `/data/adb/yyb-go/config.conf` 中配置局域网监听和面板地址；不要把端口暴露到公网。完整安装、升级、DNS 和局域网配置见 [Magisk 模块文档](docs/magisk.md)。
+
 ### 用户与权限
 
 - 第一个管理员可由 `YYB_ADMIN_USER`、`YYB_ADMIN_PASSWORD` 初始化；未设置时首个注册账号成为管理员。
@@ -109,6 +115,8 @@ YYB_BIND_ADDRESS=192.168.1.10
 ## 自动保活
 
 服务默认每 30 分钟检查一次账号，并在 access token 剩余不足 45 分钟时，通过 refresh token 更新 access token、refresh token 和 login buffer。该过程不会生成未消费的 `wx.login` code。
+
+微信服务端可能只更新 access token 而不轮换 refresh token，因此后台保活不能保证 refresh token 永久有效。控制台会记录当前 refresh token 的首次观察时间；连续使用约 25 天后显示“建议重扫”，给可能存在的约 30 天失效窗口预留处理时间。只有微信实际返回不同的 refresh token 时，这个计时才会重置。
 
 可以在 `.env` 中调整：
 

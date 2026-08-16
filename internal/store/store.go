@@ -110,17 +110,19 @@ type WechatAccount struct {
 }
 
 type AccountPublic struct {
-	ID            int64   `json:"id"`
-	OpenID        string  `json:"openid"`
-	UIN           *int64  `json:"uin"`
-	Alias         *string `json:"alias"`
-	Nickname      *string `json:"nickname"`
-	Remark        *string `json:"remark"`
-	Avatar        *string `json:"avatar"`
-	Status        *string `json:"status"`
-	LastCheckedAt *int64  `json:"last_checked_at"`
-	CreatedAt     int64   `json:"created_at"`
-	UpdatedAt     int64   `json:"updated_at"`
+	ID                     int64   `json:"id"`
+	OpenID                 string  `json:"openid"`
+	UIN                    *int64  `json:"uin"`
+	Alias                  *string `json:"alias"`
+	Nickname               *string `json:"nickname"`
+	Remark                 *string `json:"remark"`
+	Avatar                 *string `json:"avatar"`
+	Status                 *string `json:"status"`
+	RefreshTokenObservedAt *int64  `json:"refresh_token_observed_at,omitempty"`
+	RescanRecommended      bool    `json:"rescan_recommended"`
+	LastCheckedAt          *int64  `json:"last_checked_at"`
+	CreatedAt              int64   `json:"created_at"`
+	UpdatedAt              int64   `json:"updated_at"`
 }
 
 type SessionRow struct {
@@ -512,18 +514,49 @@ func (db *DB) GetFeatureByName(ctx context.Context, name string) (*Feature, erro
 }
 
 func (a *WechatAccount) Public() AccountPublic {
+	var refreshTokenObservedAt *int64
+	rescanRecommended := false
+	if stringCredential(a.Credentials, "refreshtoken") != "" {
+		if observedAt := int64Credential(a.Credentials, "refresh_token_observed_at"); observedAt > 0 {
+			refreshTokenObservedAt = &observedAt
+			rescanRecommended = time.Now().Unix()-observedAt >= int64((25*24*time.Hour)/time.Second)
+		}
+	}
 	return AccountPublic{
-		ID:            a.ID,
-		OpenID:        a.OpenID,
-		UIN:           a.UIN,
-		Alias:         a.Alias,
-		Nickname:      a.Nickname,
-		Remark:        a.Remark,
-		Avatar:        a.Avatar,
-		Status:        a.Status,
-		LastCheckedAt: a.LastCheckedAt,
-		CreatedAt:     a.CreatedAt,
-		UpdatedAt:     a.UpdatedAt,
+		ID:                     a.ID,
+		OpenID:                 a.OpenID,
+		UIN:                    a.UIN,
+		Alias:                  a.Alias,
+		Nickname:               a.Nickname,
+		Remark:                 a.Remark,
+		Avatar:                 a.Avatar,
+		Status:                 a.Status,
+		RefreshTokenObservedAt: refreshTokenObservedAt,
+		RescanRecommended:      rescanRecommended,
+		LastCheckedAt:          a.LastCheckedAt,
+		CreatedAt:              a.CreatedAt,
+		UpdatedAt:              a.UpdatedAt,
+	}
+}
+
+func stringCredential(values map[string]any, key string) string {
+	value, _ := values[key].(string)
+	return value
+}
+
+func int64Credential(values map[string]any, key string) int64 {
+	switch value := values[key].(type) {
+	case int64:
+		return value
+	case int:
+		return int64(value)
+	case float64:
+		return int64(value)
+	case json.Number:
+		result, _ := value.Int64()
+		return result
+	default:
+		return 0
 	}
 }
 

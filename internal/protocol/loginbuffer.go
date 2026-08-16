@@ -23,37 +23,43 @@ const (
 )
 
 type LoginBufferCredentials struct {
-	OpenID       string `json:"openid"`
-	AccessToken  string `json:"accesstoken"`
-	RefreshToken string `json:"refreshtoken"`
-	LoginType    string `json:"logintype"`
-	Nickname     string `json:"nickname"`
-	ExpiresAt    int64  `json:"expires_at"`
-	ExpiresIn    int64  `json:"expires_in"`
+	OpenID                 string `json:"openid"`
+	AccessToken            string `json:"accesstoken"`
+	RefreshToken           string `json:"refreshtoken"`
+	RefreshTokenObservedAt int64  `json:"refresh_token_observed_at"`
+	LoginType              string `json:"logintype"`
+	Nickname               string `json:"nickname"`
+	ExpiresAt              int64  `json:"expires_at"`
+	ExpiresIn              int64  `json:"expires_in"`
 }
 
 func CredentialsFromMap(m map[string]any) LoginBufferCredentials {
 	return LoginBufferCredentials{
-		OpenID:       stringFromMap(m, "openid"),
-		AccessToken:  stringFromMap(m, "accesstoken"),
-		RefreshToken: stringFromMap(m, "refreshtoken"),
-		LoginType:    defaultString(stringFromMap(m, "logintype"), "WX"),
-		Nickname:     stringFromMap(m, "nickname"),
-		ExpiresAt:    int64FromMap(m, "expires_at"),
-		ExpiresIn:    defaultInt64(int64FromMap(m, "expires_in"), 7200),
+		OpenID:                 stringFromMap(m, "openid"),
+		AccessToken:            stringFromMap(m, "accesstoken"),
+		RefreshToken:           stringFromMap(m, "refreshtoken"),
+		RefreshTokenObservedAt: int64FromMap(m, "refresh_token_observed_at"),
+		LoginType:              defaultString(stringFromMap(m, "logintype"), "WX"),
+		Nickname:               stringFromMap(m, "nickname"),
+		ExpiresAt:              int64FromMap(m, "expires_at"),
+		ExpiresIn:              defaultInt64(int64FromMap(m, "expires_in"), 7200),
 	}
 }
 
 func (c LoginBufferCredentials) ToMap() map[string]any {
+	if c.RefreshToken != "" && c.RefreshTokenObservedAt <= 0 {
+		c.RefreshTokenObservedAt = time.Now().Unix()
+	}
 	return map[string]any{
-		"openid":               c.OpenID,
-		"accesstoken":          c.AccessToken,
-		"refreshtoken":         c.RefreshToken,
-		"logintype":            defaultString(c.LoginType, "WX"),
-		"nickname":             c.Nickname,
-		"expires_at":           c.ExpiresAt,
-		"expires_in":           defaultInt64(c.ExpiresIn, 7200),
-		"refresh_refreshed_at": time.Now().Unix(),
+		"openid":                    c.OpenID,
+		"accesstoken":               c.AccessToken,
+		"refreshtoken":              c.RefreshToken,
+		"refresh_token_observed_at": c.RefreshTokenObservedAt,
+		"logintype":                 defaultString(c.LoginType, "WX"),
+		"nickname":                  c.Nickname,
+		"expires_at":                c.ExpiresAt,
+		"expires_in":                defaultInt64(c.ExpiresIn, 7200),
+		"refresh_refreshed_at":      time.Now().Unix(),
 	}
 }
 
@@ -145,9 +151,13 @@ func (c *LoginBufferClient) RefreshCredentials(ctx context.Context, creds LoginB
 	info, _ := data["user_info"].(map[string]any)
 	expiresIn := defaultInt64(int64FromMap(info, "expires_in"), 7200)
 	refreshed := creds
+	if refreshed.RefreshToken != "" && refreshed.RefreshTokenObservedAt <= 0 {
+		refreshed.RefreshTokenObservedAt = time.Now().Unix()
+	}
 	refreshed.AccessToken = stringFromMap(info, "access_token")
-	if rt := stringFromMap(info, "refresh_token"); rt != "" {
+	if rt := stringFromMap(info, "refresh_token"); rt != "" && rt != refreshed.RefreshToken {
 		refreshed.RefreshToken = rt
+		refreshed.RefreshTokenObservedAt = time.Now().Unix()
 	}
 	refreshed.ExpiresIn = expiresIn
 	refreshed.ExpiresAt = time.Now().Unix() + expiresIn

@@ -25,6 +25,11 @@ func main() {
 	keepAliveInterval := flag.Duration("keepalive-interval", 30*time.Minute, "account keepalive check interval; 0 disables")
 	keepAliveAhead := flag.Duration("keepalive-ahead", 45*time.Minute, "refresh credentials this long before expiry")
 	flag.Parse()
+	if dnsServers, err := configureDNS(os.Getenv("YYB_DNS_SERVERS")); err != nil {
+		log.Fatalf("configure DNS: %v", err)
+	} else if len(dnsServers) > 0 {
+		log.Printf("using configured DNS servers: %s", strings.Join(dnsServers, ", "))
+	}
 
 	panelType := getEnvWithFallback("PANEL_TYPE", "YYB_PANEL_TYPE", "QL_TYPE")
 	if panelType == "" {
