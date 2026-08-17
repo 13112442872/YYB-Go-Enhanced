@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"yyb_go/internal/protocol"
+	"yyb_go/internal/proxysource"
 	"yyb_go/internal/qr"
 )
 
@@ -18,6 +20,7 @@ var desktopWechatPorts = []int{14013, 14014, 14015, 13013, 13014, 13015}
 
 type quickLoginSession struct {
 	CreatedAt time.Time
+	ProxySpec proxysource.Spec
 }
 
 func (a *App) handleQuickLoginRoot(w http.ResponseWriter, r *http.Request) {
@@ -31,13 +34,23 @@ func (a *App) handleQuickLoginRoot(w http.ResponseWriter, r *http.Request) {
 	}
 
 	a.pruneQuickSessions()
+	var proxyBody accountProxyIn
+	if err := decodeOptionalJSON(r, &proxyBody); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		return
+	}
+	proxySpec, err := proxysource.NormalizeSpec(proxyBody.spec())
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	sessionID, err := randomSessionID()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	a.mu.Lock()
-	a.quickSessions[sessionID] = quickLoginSession{CreatedAt: time.Now()}
+	a.quickSessions[sessionID] = quickLoginSession{CreatedAt: time.Now(), ProxySpec: proxySpec}
 	a.mu.Unlock()
 
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -80,23 +93,41 @@ func (a *App) handleQuickLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if !a.takeQuickSession(parts[0]) {
+	session, ok := a.takeQuickSession(parts[0])
+	if !ok {
 		writeError(w, http.StatusNotFound, "quick login session expired or not found")
 		return
 	}
 
-	result, err := a.exchangeAuthCode(r.Context(), code)
+	client := a.qr
+	var result protocol.LoginBufferResult
+	if session.ProxySpec.Mode == "direct" {
+		result, err = a.exchangeAuthCode(r.Context(), code)
+	} else {
+		client, _, err = a.qrClientForSpec(r.Context(), session.ProxySpec)
+		if err == nil {
+			result, err = client.GetLoginBufferFromCode(r.Context(), code)
+		}
+	}
 	if err != nil {
 		writeError(w, http.StatusConflict, "quick authorization failed: "+err.Error())
 		return
 	}
 	var userInfo map[string]any
-	if ui, err := a.fetchUserInfo(r.Context(), result.Credentials); err == nil {
+	if session.ProxySpec.Mode == "direct" {
+		if ui, err := a.fetchUserInfo(r.Context(), result.Credentials); err == nil {
+			userInfo = ui
+		}
+	} else if ui, err := client.LoginBuffers().FetchUserInfo(r.Context(), result.Credentials); err == nil {
 		userInfo = ui
 	}
 	account, err := a.storeFromScan(r.Context(), result.LoginBuffer, result.Credentials, userInfo)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := a.saveAccountProxySpec(r.Context(), account.ID, session.ProxySpec); err != nil {
+		writeError(w, http.StatusInternalServerError, "保存账号代理失败: "+err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, account.Public())
@@ -134,15 +165,15 @@ func randomSessionID() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-func (a *App) takeQuickSession(sessionID string) bool {
+func (a *App) takeQuickSession(sessionID string) (quickLoginSession, bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	session, ok := a.quickSessions[sessionID]
 	if !ok {
-		return false
+		return quickLoginSession{}, false
 	}
 	delete(a.quickSessions, sessionID)
-	return time.Since(session.CreatedAt) <= a.cfg.QRSessionTTL
+	return session, time.Since(session.CreatedAt) <= a.cfg.QRSessionTTL
 }
 
 func (a *App) pruneQuickSessions() {

@@ -72,14 +72,26 @@ type PollResult struct {
 
 type Client struct {
 	timeout      time.Duration
+	transport    http.RoundTripper
 	loginBuffers *protocol.LoginBufferClient
 }
 
 func NewClient(timeout time.Duration) *Client {
+	client, _ := NewClientWithProxy(timeout, "", false)
+	return client
+}
+
+func NewClientWithProxy(timeout time.Duration, proxyValue string, fallbackDirect bool) (*Client, error) {
+	transport, err := protocol.NewHTTPTransport(proxyValue, fallbackDirect)
+	if err != nil {
+		return nil, err
+	}
+	httpClient := &http.Client{Timeout: timeout, Transport: transport}
 	return &Client{
 		timeout:      timeout,
-		loginBuffers: protocol.NewLoginBufferClient(timeout),
-	}
+		transport:    transport,
+		loginBuffers: protocol.NewLoginBufferClientWithHTTPClient(httpClient, timeout),
+	}, nil
 }
 
 func (c *Client) LoginBuffers() *protocol.LoginBufferClient { return c.loginBuffers }
@@ -101,7 +113,7 @@ func (c *Client) CreateSession(ctx context.Context) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	hc := &http.Client{Timeout: c.timeout, Jar: jar}
+	hc := &http.Client{Timeout: c.timeout, Jar: jar, Transport: c.transport}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, oauthURL, nil)
 	if err != nil {
 		return nil, err
@@ -254,7 +266,7 @@ func (c *Client) GetLoginBufferFromCode(ctx context.Context, code string) (proto
 		return protocol.LoginBufferResult{}, err
 	}
 	sess := &Session{
-		HTTPClient:    &http.Client{Timeout: c.timeout, Jar: jar},
+		HTTPClient:    &http.Client{Timeout: c.timeout, Jar: jar, Transport: c.transport},
 		Jar:           jar,
 		AuthorizeCode: code,
 		Status:        "authorized",

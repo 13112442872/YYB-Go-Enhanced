@@ -79,8 +79,15 @@ type LoginBufferClient struct {
 }
 
 func NewLoginBufferClient(timeout time.Duration) *LoginBufferClient {
+	return NewLoginBufferClientWithHTTPClient(&http.Client{Timeout: timeout}, timeout)
+}
+
+func NewLoginBufferClientWithHTTPClient(httpClient *http.Client, timeout time.Duration) *LoginBufferClient {
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: timeout}
+	}
 	return &LoginBufferClient{
-		httpClient: &http.Client{Timeout: timeout},
+		httpClient: httpClient,
 		timeout:    timeout,
 	}
 }

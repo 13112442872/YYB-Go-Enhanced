@@ -549,6 +549,37 @@
       margin: 10px 0 14px;
     }
 
+    .proxy-config {
+      margin: 0 0 14px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+    }
+
+    .proxy-config summary {
+      cursor: pointer;
+      font-weight: 720;
+    }
+
+    .proxy-grid {
+      display: grid;
+      grid-template-columns: minmax(130px, .7fr) minmax(130px, .7fr) minmax(260px, 2fr);
+      gap: 10px;
+      margin-top: 12px;
+      align-items: end;
+    }
+
+    .proxy-status {
+      min-height: 20px;
+      margin-top: 9px;
+      color: var(--muted);
+      font-size: 12px;
+      overflow-wrap: anywhere;
+    }
+
+    .proxy-config .inline-actions { margin-top: 10px; }
+
     .integration {
       margin-top: 14px;
       padding-top: 14px;
@@ -631,7 +662,7 @@
       display: none !important;
     }
 
-    @media (max-width: 1120px) {
+    @media (max-width: 1360px) {
       .overview,
       .work-grid {
         grid-template-columns: minmax(0, 1fr);
@@ -681,6 +712,7 @@
       }
 
       .account-tools { grid-template-columns: 1fr; }
+      .proxy-grid { grid-template-columns: 1fr; }
 
       .account-strip {
         grid-template-columns: minmax(0, 1fr);
@@ -776,6 +808,39 @@
               <button class="btn secondary" id="syncQingLongBtn" type="button">同步到青龙</button>
               <button class="btn danger" id="deleteAccountBtn" type="button">删除账号</button>
             </div>
+            <details class="proxy-config" id="accountProxySettings">
+              <summary>账号网络代理</summary>
+              <div class="proxy-grid">
+                <div class="field">
+                  <label for="accountProxyMode">连接模式</label>
+                  <select class="select" id="accountProxyMode">
+                    <option value="direct">直连</option>
+                    <option value="static">静态代理</option>
+                    <option value="api">动态代理 API</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="accountProxyType">代理协议</label>
+                  <select class="select" id="accountProxyType">
+                    <option value="http">HTTP CONNECT</option>
+                    <option value="socks5">SOCKS5</option>
+                  </select>
+                </div>
+                <div class="field hidden" id="accountStaticProxyGroup">
+                  <label for="accountStaticProxy">代理地址</label>
+                  <input class="input" id="accountStaticProxy" placeholder="user:pass@127.0.0.1:8080" autocomplete="off" spellcheck="false">
+                </div>
+                <div class="field hidden" id="accountProxyAPIGroup">
+                  <label for="accountProxyAPI">代理提取 API</label>
+                  <input class="input" id="accountProxyAPI" placeholder="https://example.com/get?province=山东&city=济南" autocomplete="off" spellcheck="false">
+                </div>
+              </div>
+              <div class="inline-actions">
+                <button class="btn secondary" id="testAccountProxyBtn" type="button">测试代理</button>
+                <button class="btn primary" id="saveAccountProxyBtn" type="button">保存代理</button>
+              </div>
+              <div class="proxy-status" id="accountProxyStatus">选择账号后读取配置</div>
+            </details>
             <div class="form-grid">
               <div class="field">
                 <label for="featureSel">能力</label>
@@ -997,6 +1062,8 @@
       $("saveRemarkBtn").disabled = !selected;
       $("syncQingLongBtn").disabled = !selected;
       $("deleteAccountBtn").disabled = !selected;
+      $("testAccountProxyBtn").disabled = !selected;
+      $("saveAccountProxyBtn").disabled = !selected;
       document.querySelectorAll(".account-card").forEach(card => {
         const selected = card.dataset.openid === state.selectedOpenID;
         card.classList.toggle("selected", selected);
@@ -1056,11 +1123,86 @@
         button.addEventListener("click", () => {
           state.selectedOpenID = account.openid;
           syncSelectedAccount();
+          loadAccountProxy();
           setActivity(`已选择账号：${name}`);
         });
         strip.appendChild(button);
       }
       renderStats();
+      loadAccountProxy();
+    }
+
+    function toggleAccountProxyFields() {
+      const mode = $("accountProxyMode").value;
+      $("accountStaticProxyGroup").classList.toggle("hidden", mode !== "static");
+      $("accountProxyAPIGroup").classList.toggle("hidden", mode !== "api");
+      $("accountProxyType").disabled = mode === "direct";
+    }
+
+    function accountProxyPayload(account) {
+      return {
+        ref: String(account.id),
+        mode: $("accountProxyMode").value,
+        proxy_type: $("accountProxyType").value,
+        static_proxy: $("accountStaticProxy").value.trim(),
+        api_url: $("accountProxyAPI").value.trim()
+      };
+    }
+
+    async function loadAccountProxy() {
+      const account = getSelectedAccount();
+      if (!account) {
+        $("accountProxyStatus").textContent = "选择账号后读取配置";
+        return;
+      }
+      const openid = account.openid;
+      $("accountProxyStatus").textContent = "正在读取代理配置";
+      try {
+        const config = await api("GET", `/accounts/proxy?ref=${encodeURIComponent(account.id)}`);
+        if (state.selectedOpenID !== openid) return;
+        $("accountProxyMode").value = config.mode || "direct";
+        $("accountProxyType").value = config.proxy_type || "http";
+        $("accountStaticProxy").value = config.static_proxy || "";
+        $("accountProxyAPI").value = config.api_url || "";
+        toggleAccountProxyFields();
+        $("accountProxyStatus").textContent = config.configured ? "已启用账号专属代理；代理不可用时不会转为直连" : "当前账号使用直连";
+      } catch (error) {
+        if (state.selectedOpenID === openid) $("accountProxyStatus").textContent = `读取失败：${error.message}`;
+      }
+    }
+
+    async function testAccountProxy() {
+      const account = getSelectedAccount();
+      if (!account) return;
+      const button = $("testAccountProxyBtn");
+      button.disabled = true;
+      $("accountProxyStatus").textContent = "正在提取并校验代理";
+      try {
+        const result = await api("POST", "/accounts/proxy/test", accountProxyPayload(account));
+        $("accountProxyStatus").textContent = result.resolved ? `代理解析成功：${result.proxy}` : "直连模式无需代理";
+      } catch (error) {
+        $("accountProxyStatus").textContent = `代理测试失败：${error.message}`;
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    async function saveAccountProxy() {
+      const account = getSelectedAccount();
+      if (!account) return;
+      const button = $("saveAccountProxyBtn");
+      button.disabled = true;
+      try {
+        const result = await api("PUT", "/accounts/proxy", accountProxyPayload(account));
+        $("accountStaticProxy").value = result.static_proxy || "";
+        $("accountProxyAPI").value = result.api_url || "";
+        $("accountProxyStatus").textContent = result.configured ? "代理已保存，会话缓存已重建" : "已切换为直连，会话缓存已重建";
+        setActivity(`账号 ${account.id} 的网络代理已保存`);
+      } catch (error) {
+        $("accountProxyStatus").textContent = `保存失败：${error.message}`;
+      } finally {
+        button.disabled = false;
+      }
     }
 
     function renderFeatures() {
@@ -1372,6 +1514,9 @@
     $("saveRemarkBtn").addEventListener("click", saveRemark);
     $("syncQingLongBtn").addEventListener("click", syncQingLong);
     $("deleteAccountBtn").addEventListener("click", deleteAccount);
+    $("accountProxyMode").addEventListener("change", toggleAccountProxyFields);
+    $("testAccountProxyBtn").addEventListener("click", testAccountProxy);
+    $("saveAccountProxyBtn").addEventListener("click", saveAccountProxy);
     $("saveQingLongBtn").addEventListener("click", saveQingLongConfig);
     $("clearQingLongBtn").addEventListener("click", clearQingLongConfig);
     $("featureSel").addEventListener("change", togglePayload);

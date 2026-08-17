@@ -50,7 +50,7 @@ func newOpenAPISpec() map[string]any {
 					[]map[string]any{
 						boolQueryParam("as_base64", "是否同时返回二维码图片的 data URI。"),
 					},
-					nil,
+					jsonOptionalRequestBody(refSchema("ProxySpec")),
 					defaulted(map[string]any{
 						"200": jsonResponse("二维码会话创建成功。", refSchema("QRCreateResponse")),
 					}),
@@ -94,7 +94,7 @@ func newOpenAPISpec() map[string]any {
 					[]string{"quick-login"},
 					"创建桌面微信快速授权会话",
 					nil,
-					nil,
+					jsonOptionalRequestBody(refSchema("ProxySpec")),
 					defaulted(map[string]any{
 						"200": jsonResponse("快速授权参数。", refSchema("QuickLoginCreateResponse")),
 					}),
@@ -170,6 +170,25 @@ func newOpenAPISpec() map[string]any {
 					[]string{"accounts"}, "保存账号备注", nil,
 					jsonRequestBody(refSchema("AccountRemarkRequest")),
 					defaulted(map[string]any{"200": jsonResponse("备注保存结果。", freeFormObjectSchema("账号及青龙任务名称更新状态。"))}),
+				),
+			},
+			"/accounts/proxy": map[string]any{
+				"get": openAPIOperation(
+					[]string{"accounts"}, "读取账号代理配置",
+					[]map[string]any{queryStringParam("ref", "账号 ID、UIN 或 openid。", true)}, nil,
+					defaulted(map[string]any{"200": jsonResponse("账号代理配置。", refSchema("AccountProxySetting"))}),
+				),
+				"put": openAPIOperation(
+					[]string{"accounts"}, "保存账号代理配置", nil,
+					jsonRequestBody(refSchema("AccountProxyRequest")),
+					defaulted(map[string]any{"200": jsonResponse("保存后的账号代理配置。", refSchema("AccountProxySetting"))}),
+				),
+			},
+			"/accounts/proxy/test": map[string]any{
+				"post": openAPIOperation(
+					[]string{"accounts"}, "提取并校验代理配置", nil,
+					jsonRequestBody(refSchema("AccountProxyTestRequest")),
+					defaulted(map[string]any{"200": jsonResponse("代理解析结果，不返回认证信息。", refSchema("AccountProxyTestResponse"))}),
 				),
 			},
 			"/api/qinglong/status": map[string]any{
@@ -285,7 +304,7 @@ func newOpenAPISpec() map[string]any {
 			"/wx/getphonenumber": wxAliasOperation("获取手机号（兼容入口）", "WxappRequest", "WxappResponse"),
 			"/wx/cloud":          wxAliasOperation("云函数/通用 operateWxData 兼容入口", "OperateWXDataRequest", "WxappResponse"),
 			"/wx/qrcodeauth": map[string]any{
-				"post": openAPIOperation([]string{"qr"}, "创建二维码授权会话", nil, nil,
+				"post": openAPIOperation([]string{"qr"}, "创建二维码授权会话", nil, jsonOptionalRequestBody(refSchema("ProxySpec")),
 					defaulted(map[string]any{"200": jsonResponse("二维码授权会话。", refSchema("QRCreateResponse"))})),
 			},
 			"/wx/mpgeta8key": wxAliasOperation("文章会话兼容入口", "OperateWXDataRequest", "WxappResponse"),
@@ -357,6 +376,7 @@ func newOpenAPISpec() map[string]any {
 					"status":       map[string]any{"type": "string", "example": "pending"},
 					"image_url":    map[string]any{"type": "string", "example": "/qr/{session_id}/image"},
 					"image_base64": nullableStringSchema("当 as_base64=true 时返回二维码图片 data URI。"),
+					"proxy":        map[string]any{"type": "string", "description": "本次授权会话使用的脱敏代理地址；直连时为空。"},
 				}),
 				"QRPollResponse": objectSchema([]string{"status"}, map[string]any{
 					"status": map[string]any{
@@ -412,6 +432,39 @@ func newOpenAPISpec() map[string]any {
 				"AccountRemarkRequest": objectSchema([]string{"ref", "remark"}, map[string]any{
 					"ref":    map[string]any{"type": "string"},
 					"remark": map[string]any{"type": "string", "maxLength": 80},
+				}),
+				"ProxySpec": objectSchema(nil, map[string]any{
+					"mode":         map[string]any{"type": "string", "enum": []string{"direct", "static", "api"}, "default": "direct"},
+					"proxy_type":   map[string]any{"type": "string", "enum": []string{"http", "socks5"}, "default": "http", "description": "http 使用 HTTP CONNECT。"},
+					"static_proxy": map[string]any{"type": "string", "example": "user:pass@127.0.0.1:8080"},
+					"api_url":      map[string]any{"type": "string", "format": "uri", "description": "可携带省市参数；响应支持 txt、json、json2 及常见嵌套字段。"},
+				}),
+				"AccountProxyRequest": objectSchema([]string{"ref", "mode"}, map[string]any{
+					"ref":          map[string]any{"type": "string", "description": "账号 ID、UIN 或 openid。"},
+					"mode":         map[string]any{"type": "string", "enum": []string{"direct", "static", "api"}},
+					"proxy_type":   map[string]any{"type": "string", "enum": []string{"http", "socks5"}},
+					"static_proxy": map[string]any{"type": "string"},
+					"api_url":      map[string]any{"type": "string", "format": "uri"},
+				}),
+				"AccountProxyTestRequest": objectSchema(nil, map[string]any{
+					"ref":          map[string]any{"type": "string", "description": "仅传 ref 时测试已保存配置；也可直接传代理配置。"},
+					"mode":         map[string]any{"type": "string", "enum": []string{"direct", "static", "api"}},
+					"proxy_type":   map[string]any{"type": "string", "enum": []string{"http", "socks5"}},
+					"static_proxy": map[string]any{"type": "string"},
+					"api_url":      map[string]any{"type": "string", "format": "uri"},
+				}),
+				"AccountProxySetting": objectSchema([]string{"account_id", "mode", "proxy_type", "configured", "updated_at"}, map[string]any{
+					"account_id":   int64Schema(),
+					"mode":         map[string]any{"type": "string", "enum": []string{"direct", "static", "api"}},
+					"proxy_type":   map[string]any{"type": "string", "enum": []string{"http", "socks5"}},
+					"static_proxy": map[string]any{"type": "string"},
+					"api_url":      map[string]any{"type": "string"},
+					"configured":   map[string]any{"type": "boolean"},
+					"updated_at":   int64Schema(),
+				}),
+				"AccountProxyTestResponse": objectSchema([]string{"resolved", "proxy"}, map[string]any{
+					"resolved": map[string]any{"type": "boolean"},
+					"proxy":    map[string]any{"type": "string", "description": "不含账号密码的代理地址。"},
 				}),
 				"RefreshResponse": oneOfSchema(
 					refSchema("RefreshResult"),

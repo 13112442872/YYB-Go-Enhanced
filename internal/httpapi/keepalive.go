@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"yyb_go/internal/protocol"
+	"yyb_go/internal/qr"
 	"yyb_go/internal/store"
 )
 
@@ -65,6 +66,15 @@ func (a *App) refreshDueAccounts(ctx context.Context) {
 
 func (a *App) refreshLiveness(ctx context.Context, acc *store.WechatAccount) string {
 	status, _, _ := a.refreshAccount(ctx, acc, true)
+	return a.finishLivenessRefresh(ctx, acc, status)
+}
+
+func (a *App) refreshLivenessWithProxy(ctx context.Context, acc *store.WechatAccount, proxyValue string, fallbackDirect bool) string {
+	status, _, _ := a.refreshAccountWithPolicy(ctx, acc, true, proxyValue, fallbackDirect, true)
+	return a.finishLivenessRefresh(ctx, acc, status)
+}
+
+func (a *App) finishLivenessRefresh(ctx context.Context, acc *store.WechatAccount, status string) string {
 	if status == "alive" {
 		if avatar := a.resolveAvatar(ctx, acc.OpenID, acc.UserInfo); avatar != "" {
 			_ = a.db.SetAccountProfile(ctx, acc.ID, acc.Nickname, &avatar, acc.UserInfo)
@@ -74,6 +84,10 @@ func (a *App) refreshLiveness(ctx context.Context, acc *store.WechatAccount) str
 }
 
 func (a *App) refreshAccount(ctx context.Context, acc *store.WechatAccount, force bool) (string, bool, error) {
+	return a.refreshAccountWithPolicy(ctx, acc, force, "", false, false)
+}
+
+func (a *App) refreshAccountWithPolicy(ctx context.Context, acc *store.WechatAccount, force bool, proxyValue string, fallbackDirect, proxyResolved bool) (string, bool, error) {
 	a.refreshMu.Lock()
 	defer a.refreshMu.Unlock()
 
@@ -94,7 +108,13 @@ func (a *App) refreshAccount(ctx context.Context, acc *store.WechatAccount, forc
 		return accountStatus(latest), false, nil
 	}
 
-	result, err := a.refreshLoginBuffer(ctx, creds)
+	if !proxyResolved {
+		proxyValue, fallbackDirect, err = a.resolveAccountProxy(ctx, latest.ID)
+		if err != nil {
+			return accountStatus(latest), false, fmt.Errorf("resolve account proxy: %w", err)
+		}
+	}
+	result, err := a.refreshLoginBufferWithProxy(ctx, creds, proxyValue, fallbackDirect)
 	if err != nil {
 		status := accountStatus(latest)
 		if force || creds.ExpiresAt <= time.Now().Unix() {
@@ -109,6 +129,28 @@ func (a *App) refreshAccount(ctx context.Context, acc *store.WechatAccount, forc
 		return "expired", false, err
 	}
 	return "alive", true, nil
+}
+
+func (a *App) refreshLoginBufferWithProxy(ctx context.Context, creds protocol.LoginBufferCredentials, proxyValue string, fallbackDirect bool) (protocol.LoginBufferResult, error) {
+	if proxyValue == "" {
+		return a.refreshLoginBuffer(ctx, creds)
+	}
+	client, err := qr.NewClientWithProxy(a.cfg.RequestTimeout, proxyValue, fallbackDirect)
+	if err != nil {
+		return protocol.LoginBufferResult{}, err
+	}
+	return client.RefreshLoginBuffer(ctx, creds)
+}
+
+func (a *App) fetchUserInfoWithProxy(ctx context.Context, creds protocol.LoginBufferCredentials, proxyValue string, fallbackDirect bool) (map[string]any, error) {
+	if proxyValue == "" {
+		return a.fetchUserInfo(ctx, creds)
+	}
+	client, err := qr.NewClientWithProxy(a.cfg.RequestTimeout, proxyValue, fallbackDirect)
+	if err != nil {
+		return nil, err
+	}
+	return client.LoginBuffers().FetchUserInfo(ctx, creds)
 }
 
 func credentialsDueForRefresh(creds protocol.LoginBufferCredentials, now time.Time, ahead time.Duration) bool {

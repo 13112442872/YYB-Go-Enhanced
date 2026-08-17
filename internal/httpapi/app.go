@@ -20,6 +20,7 @@ import (
 
 	"yyb_go/internal/auth"
 	"yyb_go/internal/protocol"
+	"yyb_go/internal/proxysource"
 	"yyb_go/internal/qr"
 	"yyb_go/internal/store"
 )
@@ -63,7 +64,7 @@ type App struct {
 	auth               *auth.Store
 
 	mu            sync.Mutex
-	qrSessions    map[string]*qr.Session
+	qrSessions    map[string]*qrLoginSession
 	quickSessions map[string]quickLoginSession
 	refreshMu     sync.Mutex
 	loginMu       sync.Mutex
@@ -137,7 +138,6 @@ func NewApp(cfg Config) (*App, error) {
 	poolCfg := protocol.DefaultConfig()
 	poolCfg.SessionTTL = cfg.SessionTTL
 	poolCfg.ShortlinkTimeout = cfg.RequestTimeout
-	poolCfg.TCPProxy = cfg.TCPProxy
 	pool := protocol.NewPool(poolCfg, db)
 	qrClient := qr.NewClient(cfg.RequestTimeout)
 	app := &App{
@@ -150,7 +150,7 @@ func NewApp(cfg Config) (*App, error) {
 		exchangeAuthCode:   qrClient.GetLoginBufferFromCode,
 		fetchUserInfo:      qrClient.LoginBuffers().FetchUserInfo,
 		qinglong:           newQingLongClient(cfg.QingLongType, cfg.QingLongURL, cfg.QingLongClientID, cfg.QingLongSecret, cfg.RequestTimeout),
-		qrSessions:         map[string]*qr.Session{},
+		qrSessions:         map[string]*qrLoginSession{},
 		quickSessions:      map[string]quickLoginSession{},
 		loginAttempts:      map[string]loginAttempt{},
 	}
@@ -263,6 +263,8 @@ func (a *App) Handler() http.Handler {
 	router.Any("/accounts/refresh", gin.WrapF(a.handleAccountRefresh))
 	router.Any("/accounts/resync", gin.WrapF(a.handleAccountResync))
 	router.Any("/accounts/remark", gin.WrapF(a.handleAccountRemark))
+	router.Any("/accounts/proxy", gin.WrapF(a.handleAccountProxy))
+	router.Any("/accounts/proxy/test", gin.WrapF(a.handleAccountProxyTest))
 	router.Any("/api/qinglong/status", gin.WrapF(a.handleQingLongStatus))
 	router.Any("/api/qinglong/config", gin.WrapF(a.handleQingLongConfig))
 	router.Any("/api/qinglong/sync", gin.WrapF(a.handleQingLongSync))
@@ -332,15 +334,25 @@ func (a *App) handleQRRoot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.pruneQR()
+	var body accountProxyIn
+	if err := decodeOptionalJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), a.cfg.RequestTimeout+35*time.Second)
 	defer cancel()
-	img, err := a.qr.GetQRCodeImage(ctx)
+	client, resolvedProxy, err := a.qrClientForSpec(ctx, body.spec())
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	img, err := client.GetQRCodeImage(ctx)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
 	a.mu.Lock()
-	a.qrSessions[img.Session.ID] = img.Session
+	a.qrSessions[img.Session.ID] = &qrLoginSession{Session: img.Session, Client: client, ProxySpec: body.spec()}
 	keep := make(map[string]bool, len(a.qrSessions))
 	for sid := range a.qrSessions {
 		keep[sid] = true
@@ -357,6 +369,7 @@ func (a *App) handleQRRoot(w http.ResponseWriter, r *http.Request) {
 		"session_id": img.Session.ID,
 		"status":     img.Session.Status,
 		"image_url":  basePath + "/" + img.Session.ID + "/image",
+		"proxy":      proxysource.Mask(resolvedProxy),
 	}
 	if r.URL.Query().Get("as_base64") == "true" {
 		out["image_base64"] = qr.DataURIJPEG(img.ImageBytes)
@@ -395,12 +408,12 @@ func (a *App) handleQR(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
-		sess := a.getQRSession(sessionID)
-		if sess == nil {
+		login := a.getQRSession(sessionID)
+		if login == nil {
 			writeError(w, http.StatusNotFound, "qr session not found")
 			return
 		}
-		result, err := a.qr.PollQRCode(r.Context(), sess)
+		result, err := login.Client.PollQRCode(r.Context(), login.Session)
 		if err != nil {
 			writeError(w, http.StatusBadGateway, err.Error())
 			return
@@ -414,23 +427,27 @@ func (a *App) handleQR(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
-		sess := a.getQRSession(sessionID)
-		if sess == nil {
+		login := a.getQRSession(sessionID)
+		if login == nil {
 			writeError(w, http.StatusNotFound, "qr session not found")
 			return
 		}
-		result, err := a.qr.GetLoginBuffer(r.Context(), sess)
+		result, err := login.Client.GetLoginBuffer(r.Context(), login.Session)
 		if err != nil {
 			writeError(w, http.StatusConflict, "buffer not ready: "+err.Error())
 			return
 		}
 		var userInfo map[string]any
-		if ui, err := a.fetchUserInfo(r.Context(), result.Credentials); err == nil {
+		if ui, err := login.Client.LoginBuffers().FetchUserInfo(r.Context(), result.Credentials); err == nil {
 			userInfo = ui
 		}
 		acc, err := a.storeFromScan(r.Context(), result.LoginBuffer, result.Credentials, userInfo)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if err := a.saveAccountProxySpec(r.Context(), acc.ID, login.ProxySpec); err != nil {
+			writeError(w, http.StatusInternalServerError, "保存账号代理失败: "+err.Error())
 			return
 		}
 		a.dropQRSession(sessionID)
@@ -694,13 +711,18 @@ func (a *App) handleWXGetUserInfo(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "account has no login credentials")
 		return
 	}
-	creds := protocol.CredentialsFromMap(acc.Credentials)
-	info, err := a.fetchUserInfo(r.Context(), creds)
+	proxyValue, fallbackDirect, err := a.resolveAccountProxy(r.Context(), acc.ID)
 	if err != nil {
-		if status := a.refreshLiveness(r.Context(), acc); status == "alive" {
+		writeError(w, http.StatusBadGateway, "resolve account proxy failed: "+err.Error())
+		return
+	}
+	creds := protocol.CredentialsFromMap(acc.Credentials)
+	info, err := a.fetchUserInfoWithProxy(r.Context(), creds, proxyValue, fallbackDirect)
+	if err != nil {
+		if status := a.refreshLivenessWithProxy(r.Context(), acc, proxyValue, fallbackDirect); status == "alive" {
 			if fresh, getErr := a.db.GetAccount(r.Context(), acc.ID); getErr == nil {
 				acc = fresh
-				info, err = a.fetchUserInfo(r.Context(), protocol.CredentialsFromMap(acc.Credentials))
+				info, err = a.fetchUserInfoWithProxy(r.Context(), protocol.CredentialsFromMap(acc.Credentials), proxyValue, fallbackDirect)
 			}
 		}
 	}
@@ -733,7 +755,7 @@ type wxappRequest struct {
 	Payload map[string]any `json:"payload"`
 }
 
-type wxappCall func(ctx context.Context, acc *store.WechatAccount, appID string, payload map[string]any) (map[string]any, error)
+type wxappCall func(ctx context.Context, acc *store.WechatAccount, appID string, payload map[string]any, proxyValue string, fallbackDirect bool) (map[string]any, error)
 
 func (a *App) callWXApp(w http.ResponseWriter, r *http.Request, requirePayload bool, call wxappCall) {
 	var body wxappRequest
@@ -877,15 +899,18 @@ type accountExpiredError struct{ openid string }
 func (e accountExpiredError) Error() string { return "account expired: " + e.openid }
 
 func (a *App) invokeWXApp(ctx context.Context, acc *store.WechatAccount, appID string, payload map[string]any, call wxappCall) (map[string]any, error) {
-	proxy := a.cfg.TCPProxy
-	if _, err := a.db.GetSession(ctx, acc.ID, proxy); err == nil {
-		result, err := call(ctx, acc, appID, payload)
+	proxyValue, fallbackDirect, err := a.resolveAccountProxy(ctx, acc.ID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve account proxy: %w", err)
+	}
+	if _, err := a.db.GetSession(ctx, acc.ID, proxyValue); err == nil {
+		result, err := call(ctx, acc, appID, payload, proxyValue, fallbackDirect)
 		if err == nil {
 			return result, nil
 		}
-		_ = a.db.InvalidateSession(ctx, acc.ID, proxy)
+		_ = a.db.InvalidateSession(ctx, acc.ID, proxyValue)
 	}
-	status := a.refreshLiveness(ctx, acc)
+	status := a.refreshLivenessWithProxy(ctx, acc, proxyValue, fallbackDirect)
 	if status != "alive" {
 		return nil, accountExpiredError{openid: acc.OpenID}
 	}
@@ -893,19 +918,19 @@ func (a *App) invokeWXApp(ctx context.Context, acc *store.WechatAccount, appID s
 	if err == nil && fresh != nil {
 		acc = fresh
 	}
-	return call(ctx, acc, appID, payload)
+	return call(ctx, acc, appID, payload, proxyValue, fallbackDirect)
 }
 
-func (a *App) invokeGetCode(ctx context.Context, acc *store.WechatAccount, appID string, _ map[string]any) (map[string]any, error) {
-	return a.pool.GetCode(ctx, acc.LoginBuffer, appID, acc.ID, a.cfg.TCPProxy)
+func (a *App) invokeGetCode(ctx context.Context, acc *store.WechatAccount, appID string, _ map[string]any, proxyValue string, fallbackDirect bool) (map[string]any, error) {
+	return a.pool.GetCode(ctx, acc.LoginBuffer, appID, acc.ID, proxyValue, fallbackDirect)
 }
 
-func (a *App) invokeGetPhoneNumber(ctx context.Context, acc *store.WechatAccount, appID string, _ map[string]any) (map[string]any, error) {
-	return a.pool.GetPhoneNumber(ctx, acc.LoginBuffer, appID, acc.ID, a.cfg.TCPProxy)
+func (a *App) invokeGetPhoneNumber(ctx context.Context, acc *store.WechatAccount, appID string, _ map[string]any, proxyValue string, fallbackDirect bool) (map[string]any, error) {
+	return a.pool.GetPhoneNumber(ctx, acc.LoginBuffer, appID, acc.ID, proxyValue, fallbackDirect)
 }
 
-func (a *App) invokeOperateWXData(ctx context.Context, acc *store.WechatAccount, appID string, payload map[string]any) (map[string]any, error) {
-	return a.pool.OperateWXData(ctx, acc.LoginBuffer, appID, payload, acc.ID, a.cfg.TCPProxy)
+func (a *App) invokeOperateWXData(ctx context.Context, acc *store.WechatAccount, appID string, payload map[string]any, proxyValue string, fallbackDirect bool) (map[string]any, error) {
+	return a.pool.OperateWXData(ctx, acc.LoginBuffer, appID, payload, acc.ID, proxyValue, fallbackDirect)
 }
 
 func refreshOut(acc *store.WechatAccount, status string) map[string]any {
@@ -974,7 +999,7 @@ func looksLikeImage(data []byte) bool {
 	return false
 }
 
-func (a *App) getQRSession(id string) *qr.Session {
+func (a *App) getQRSession(id string) *qrLoginSession {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.qrSessions[id]
@@ -991,7 +1016,7 @@ func (a *App) pruneQR() {
 	a.mu.Lock()
 	var drop []string
 	for sid, sess := range a.qrSessions {
-		if sess.Age() > a.cfg.QRSessionTTL {
+		if sess.Session.Age() > a.cfg.QRSessionTTL {
 			drop = append(drop, sid)
 		}
 	}

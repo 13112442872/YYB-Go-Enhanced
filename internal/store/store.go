@@ -75,6 +75,16 @@ CREATE TABLE IF NOT EXISTS account_push_settings (
     updated_at     INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS account_proxy_settings (
+    account_id   INTEGER PRIMARY KEY REFERENCES wechat_accounts(id) ON DELETE CASCADE,
+    mode         TEXT    NOT NULL DEFAULT 'direct',
+    proxy_type   TEXT    NOT NULL DEFAULT 'http',
+    static_proxy TEXT    NOT NULL DEFAULT '',
+    api_url      TEXT    NOT NULL DEFAULT '',
+    created_at   INTEGER NOT NULL,
+    updated_at   INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS app_settings (
     key        TEXT PRIMARY KEY,
     value      TEXT NOT NULL,
@@ -445,6 +455,11 @@ func (db *DB) PutSession(ctx context.Context, accountID int64, uin *int64, sessi
 
 func (db *DB) InvalidateSession(ctx context.Context, accountID int64, tcpProxy string) error {
 	_, err := db.sql.ExecContext(ctx, "DELETE FROM sessions WHERE wechat_account_id=? AND tcp_proxy=?", accountID, tcpProxy)
+	return err
+}
+
+func (db *DB) InvalidateAccountSessions(ctx context.Context, accountID int64) error {
+	_, err := db.sql.ExecContext(ctx, "DELETE FROM sessions WHERE wechat_account_id=?", accountID)
 	return err
 }
 
