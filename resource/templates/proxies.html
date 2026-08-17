@@ -94,7 +94,7 @@
       .proxy-editor { padding: 20px; }
     }
     @media (max-width: 600px) {
-      .proxy-page-actions { width: 100%; align-items: stretch; flex-direction: column-reverse; }
+      .proxy-page-actions { width: 100%; align-items: stretch; flex-direction: column; }
       .proxy-page-actions .btn { width: 100%; }
       .proxy-account-head { flex-direction: column; gap: 8px; }
       .proxy-safety { max-width: none; text-align: left; }
@@ -282,6 +282,6 @@
     $("reloadProxyPage").addEventListener("click", () => loadPage().catch(error => { $("proxyAccountList").innerHTML = `<div class="proxy-list-empty">加载失败：${escapeHTML(error.message)}</div>`; }));
     loadPage().catch(error => { $("proxyAccountCount").textContent = "加载失败"; $("proxyAccountList").innerHTML = `<div class="proxy-list-empty">${escapeHTML(error.message)}</div>`; });
   </script>
-  <script src="/static/js/platform.js"></script>
+  <script src="/static/js/platform.js?v=20260817-proxy-page"></script>
 </body>
 </html>

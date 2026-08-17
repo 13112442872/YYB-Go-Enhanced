@@ -218,6 +218,12 @@ func (a *App) Handler() http.Handler {
 	router.Any("/health", func(c *gin.Context) {
 		writeJSON(c.Writer, http.StatusOK, gin.H{"ok": true})
 	})
+	router.Use(func(c *gin.Context) {
+		if strings.HasPrefix(c.Request.URL.Path, "/static/") {
+			c.Header("Cache-Control", "no-cache")
+		}
+		c.Next()
+	})
 	router.StaticFS("/static", http.Dir(a.resources.Static))
 	// Existing automation clients must remain independent from browser sessions.
 	router.Any("/wx/oauth", gin.WrapF(a.handlePublicOAuth))
