@@ -106,6 +106,17 @@ func TestHandlerServesGinRoutesAndSwaggerDocs(t *testing.T) {
 		t.Fatalf("GET /docs Location = %q", got)
 	}
 
+	proxies := httptest.NewRecorder()
+	handler.ServeHTTP(proxies, httptest.NewRequest(http.MethodGet, "/proxies", nil))
+	if proxies.Code != http.StatusOK || !strings.Contains(proxies.Body.String(), "代理设置") {
+		t.Fatalf("GET /proxies = %d %s", proxies.Code, proxies.Body.String())
+	}
+	proxiesPost := httptest.NewRecorder()
+	handler.ServeHTTP(proxiesPost, httptest.NewRequest(http.MethodPost, "/proxies", nil))
+	if proxiesPost.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("POST /proxies status = %d", proxiesPost.Code)
+	}
+
 	features := httptest.NewRecorder()
 	handler.ServeHTTP(features, httptest.NewRequest(http.MethodGet, "/features", nil))
 	if features.Code != http.StatusNotFound {

@@ -249,6 +249,7 @@ func (a *App) Handler() http.Handler {
 	router.Use(a.requireAdminSession())
 	router.Any("/", gin.WrapF(a.handleIndex))
 	router.Any("/scan", gin.WrapF(a.handleScan))
+	router.Any("/proxies", gin.WrapF(a.handleProxiesPage))
 	router.Any("/runs", gin.WrapF(a.handleRuns))
 	router.Any("/docs", func(c *gin.Context) {
 		c.Redirect(http.StatusMovedPermanently, "/docs/index.html")
@@ -302,6 +303,14 @@ func (a *App) handleScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	serveFileOrText(w, r, filepath.Join(a.resources.Templates, "scan.html"), fallbackScanHTML)
+}
+
+func (a *App) handleProxiesPage(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	serveFileOrText(w, r, filepath.Join(a.resources.Templates, "proxies.html"), fallbackProxiesHTML)
 }
 
 func (a *App) handleDocs(w http.ResponseWriter, r *http.Request) {

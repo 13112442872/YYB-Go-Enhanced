@@ -62,6 +62,10 @@ async function poll(){
 newQR();
 </script></body></html>`
 
+const fallbackProxiesHTML = `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>代理设置 - YYB Go</title><body style="font-family:system-ui,sans-serif;margin:40px"><main><h1>代理设置</h1>
+<p>资源模板未找到，请检查容器内的 <code>/app/resource/templates/proxies.html</code>。</p><p><a href="/">返回工作台</a></p></main></body></html>`
+
 const fallbackRunsHTML = `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>账号运行管理</title><body style="font-family:system-ui,sans-serif;margin:40px"><h1>账号运行管理</h1>
 <p>资源模板未找到，请检查容器内的 <code>/app/resource/templates/runs.html</code>。</p><p><a href="/">返回账号控制台</a></p></body></html>`

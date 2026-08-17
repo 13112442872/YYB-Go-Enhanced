@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>代理设置 - YYB Go</title>
+  <link rel="stylesheet" href="/static/css/auth.css">
+  <link rel="stylesheet" href="/static/css/platform.css">
+  <style>
+    .proxy-page { max-width: 1240px; }
+    .proxy-page .page-title { align-items: center; }
+    .proxy-page-actions { display: flex; align-items: center; gap: 8px; }
+    .proxy-workspace {
+      min-height: 620px;
+      display: grid;
+      grid-template-columns: minmax(250px, 300px) minmax(0, 1fr);
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: white;
+    }
+    .proxy-accounts {
+      min-width: 0;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      border-right: 1px solid var(--line);
+      background: #f8fafb;
+    }
+    .proxy-list-head { padding: 16px; border-bottom: 1px solid var(--line); }
+    .proxy-list-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 11px; }
+    .proxy-list-title strong { font-size: 14px; }
+    .proxy-list-title span { color: var(--muted); font-size: 12px; }
+    .proxy-list { min-height: 0; overflow: auto; }
+    .proxy-account {
+      width: 100%;
+      min-height: 72px;
+      display: grid;
+      grid-template-columns: 38px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 10px;
+      padding: 11px 14px;
+      border: 0;
+      border-bottom: 1px solid var(--line);
+      background: transparent;
+      color: var(--ink);
+      text-align: left;
+      cursor: pointer;
+    }
+    .proxy-account:hover { background: white; }
+    .proxy-account[aria-pressed="true"] { background: white; box-shadow: inset 3px 0 0 var(--brand); }
+    .proxy-account-avatar { width: 38px; height: 38px; display: grid; place-items: center; overflow: hidden; border-radius: 50%; background: #edf1f4; color: var(--muted); font-weight: 750; }
+    .proxy-account-avatar img { width: 100%; height: 100%; object-fit: cover; }
+    .proxy-account-copy { min-width: 0; }
+    .proxy-account-copy strong, .proxy-account-copy small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .proxy-account-copy strong { font-size: 13px; }
+    .proxy-account-copy small { margin-top: 4px; color: var(--muted); font-size: 11px; }
+    .proxy-mode-badge { display: inline-flex; align-items: center; min-height: 24px; padding: 3px 7px; border-radius: 999px; background: #eef1f4; color: var(--muted); font-size: 11px; white-space: nowrap; }
+    .proxy-mode-badge.static { background: #eaf3ff; color: #205fa8; }
+    .proxy-mode-badge.api { background: #fbeef2; color: #9f2444; }
+    .proxy-mode-badge.error { background: #fff5f4; color: var(--danger); }
+    .proxy-list-empty { padding: 32px 16px; color: var(--muted); text-align: center; }
+    .proxy-skeleton { height: 72px; border-bottom: 1px solid var(--line); background: linear-gradient(90deg, #f4f6f8 25%, #fff 50%, #f4f6f8 75%); background-size: 220% 100%; animation: proxy-loading 1.2s linear infinite; }
+    .proxy-editor { min-width: 0; padding: 24px; }
+    .proxy-editor-empty { min-height: 420px; display: grid; place-items: center; color: var(--muted); text-align: center; }
+    .proxy-account-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding-bottom: 18px; border-bottom: 1px solid var(--line); }
+    .proxy-account-identity { min-width: 0; }
+    .proxy-account-identity h2 { margin: 0; font-size: 18px; }
+    .proxy-account-identity p { margin: 5px 0 0; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+    .proxy-safety { max-width: 360px; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.55; text-align: right; }
+    .proxy-form { margin-top: 22px; }
+    .proxy-fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+    .proxy-fieldset legend { margin-bottom: 9px; font-weight: 650; }
+    .proxy-modes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding: 4px; border: 1px solid var(--line); border-radius: 8px; background: #f4f6f8; }
+    .proxy-mode-option { min-width: 0; position: relative; }
+    .proxy-mode-option input { position: absolute; opacity: 0; pointer-events: none; }
+    .proxy-mode-option label { min-height: 38px; display: grid; place-items: center; padding: 7px 10px; border-radius: 6px; color: var(--muted); font-weight: 650; cursor: pointer; text-align: center; }
+    .proxy-mode-option input:checked + label { background: white; color: var(--ink); box-shadow: 0 1px 3px rgba(25, 33, 43, .12); }
+    .proxy-mode-option input:focus-visible + label { outline: 2px solid var(--focus); outline-offset: 1px; }
+    .proxy-form-grid { display: grid; grid-template-columns: minmax(0, 220px) minmax(0, 1fr); gap: 16px; margin-top: 20px; }
+    .proxy-form-grid > * { min-width: 0; }
+    .proxy-form-grid .field { margin: 0; }
+    .proxy-form-grid .wide { grid-column: 1 / -1; }
+    .proxy-field-note { margin-top: 6px; color: var(--muted); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+    .proxy-feedback { min-height: 42px; margin-top: 18px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 7px; background: #f8fafb; color: var(--muted); line-height: 1.45; overflow-wrap: anywhere; }
+    .proxy-feedback.ok { border-color: #b8decf; background: #f0faf6; color: var(--ok); }
+    .proxy-feedback.error { border-color: #efc9c5; background: #fff5f4; color: var(--danger); }
+    .proxy-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+    .proxy-actions .btn.primary { width: auto; }
+    [hidden] { display: none !important; }
+    @keyframes proxy-loading { to { background-position: -220% 0; } }
+    @media (max-width: 920px) {
+      .proxy-workspace { grid-template-columns: minmax(0, 1fr); }
+      .proxy-accounts { max-height: 320px; border-right: 0; border-bottom: 1px solid var(--line); }
+      .proxy-editor { padding: 20px; }
+    }
+    @media (max-width: 600px) {
+      .proxy-page-actions { width: 100%; align-items: stretch; flex-direction: column-reverse; }
+      .proxy-page-actions .btn { width: 100%; }
+      .proxy-account-head { flex-direction: column; gap: 8px; }
+      .proxy-safety { max-width: none; text-align: left; }
+      .proxy-modes, .proxy-form-grid { grid-template-columns: minmax(0, 1fr); }
+      .proxy-form-grid .wide { grid-column: auto; }
+      .proxy-actions { align-items: stretch; flex-direction: column-reverse; }
+      .proxy-actions .btn { width: 100%; }
+    }
+    @media (prefers-reduced-motion: reduce) { .proxy-skeleton { animation: none; } }
+  </style>
+</head>
+<body>
+  <header class="shell-header"></header>
+  <main class="page proxy-page">
+    <div class="page-title">
+      <div><h1>代理设置</h1><p>统一管理每个微信账号的网络出口。</p></div>
+      <div class="proxy-page-actions"><a class="btn secondary" id="backToAccount" href="/">返回账号工作台</a><button class="btn secondary" id="reloadProxyPage" type="button">重新加载</button></div>
+    </div>
+    <section class="proxy-workspace" aria-label="账号代理管理">
+      <aside class="proxy-accounts" aria-label="微信账号列表">
+        <div class="proxy-list-head">
+          <div class="proxy-list-title"><strong>微信账号</strong><span id="proxyAccountCount">正在加载</span></div>
+          <input class="input" id="proxyAccountSearch" type="search" placeholder="搜索备注、昵称或 ID" aria-label="搜索微信账号">
+        </div>
+        <div class="proxy-list" id="proxyAccountList">
+          <div class="proxy-skeleton"></div><div class="proxy-skeleton"></div><div class="proxy-skeleton"></div>
+        </div>
+      </aside>
+      <section class="proxy-editor" aria-label="代理配置编辑器">
+        <div class="proxy-editor-empty" id="proxyEditorEmpty">选择一个账号后管理代理。</div>
+        <div id="proxyEditor" hidden>
+          <div class="proxy-account-head">
+            <div class="proxy-account-identity"><h2 id="proxyAccountName">未选择</h2><p id="proxyAccountMeta"></p></div>
+            <p class="proxy-safety">账号专属代理失败时会停止请求，不会回退到直连。</p>
+          </div>
+          <form class="proxy-form" id="proxyForm">
+            <fieldset class="proxy-fieldset">
+              <legend>连接模式</legend>
+              <div class="proxy-modes">
+                <div class="proxy-mode-option"><input id="proxyModeDirect" name="proxyMode" type="radio" value="direct" checked><label for="proxyModeDirect">直连</label></div>
+                <div class="proxy-mode-option"><input id="proxyModeStatic" name="proxyMode" type="radio" value="static"><label for="proxyModeStatic">静态代理</label></div>
+                <div class="proxy-mode-option"><input id="proxyModeAPI" name="proxyMode" type="radio" value="api"><label for="proxyModeAPI">动态代理 API</label></div>
+              </div>
+            </fieldset>
+            <div class="proxy-form-grid">
+              <div class="field">
+                <label for="proxyType">代理协议</label>
+                <select class="input" id="proxyType"><option value="http">HTTP CONNECT</option><option value="socks5">SOCKS5</option></select>
+              </div>
+              <div class="field wide" id="staticProxyField" hidden>
+                <label for="staticProxy">代理地址</label>
+                <input class="input" id="staticProxy" placeholder="user:pass@127.0.0.1:8080" autocomplete="off" spellcheck="false">
+                <span class="proxy-field-note">支持 IP:端口、用户名:密码@IP:端口及完整代理 URL。</span>
+              </div>
+              <div class="field wide" id="proxyAPIField" hidden>
+                <label for="proxyAPI">代理提取 API</label>
+                <input class="input" id="proxyAPI" type="url" placeholder="https://example.com/get?province=山东&city=济南" autocomplete="off" spellcheck="false">
+                <span class="proxy-field-note">支持 txt、json、json2 和常见嵌套响应，省市参数可直接放在 URL 中。</span>
+              </div>
+            </div>
+            <div class="proxy-feedback" id="proxyFeedback" role="status" aria-live="polite">正在读取代理配置。</div>
+            <div class="proxy-actions">
+              <button class="btn secondary" id="testProxy" type="button">测试代理</button>
+              <button class="btn primary" id="saveProxy" type="submit">保存代理</button>
+            </div>
+          </form>
+        </div>
+      </section>
+    </section>
+  </main>
+  <script>
+    const $ = id => document.getElementById(id);
+    const state = { accounts: [], configs: new Map(), selectedID: "" };
+    const modeLabels = { direct: "直连", static: "静态", api: "动态 API" };
+    const escapeHTML = value => { const node = document.createElement("span"); node.textContent = value ?? ""; return node.innerHTML; };
+    async function api(path, options = {}) {
+      const response = await fetch(path, { headers: { "Content-Type": "application/json", ...(options.headers || {}) }, ...options });
+      const text = await response.text();
+      let payload;
+      try { payload = text ? JSON.parse(text) : null; } catch { throw new Error(`服务返回了非 JSON 内容（HTTP ${response.status}）`); }
+      if (!payload) throw new Error(`服务返回空响应（HTTP ${response.status}）`);
+      if (!response.ok || payload.code !== 0) throw new Error(payload.msg || `请求失败（HTTP ${response.status}）`);
+      return payload.data;
+    }
+    function accountName(account) { return account.remark || account.nickname || account.alias || account.openid || "未命名账号"; }
+    function currentAccount() { return state.accounts.find(account => String(account.id) === state.selectedID) || null; }
+    function currentMode() { return document.querySelector('input[name="proxyMode"]:checked')?.value || "direct"; }
+    function setFeedback(message, kind = "") { const node = $("proxyFeedback"); node.textContent = message; node.className = `proxy-feedback ${kind}`.trim(); }
+    function renderAccountList() {
+      const query = $("proxyAccountSearch").value.trim().toLowerCase();
+      const accounts = state.accounts.filter(account => !query || accountName(account).toLowerCase().includes(query) || String(account.id).includes(query) || (account.openid || "").toLowerCase().includes(query));
+      $("proxyAccountCount").textContent = `${state.accounts.length} 个账号`;
+      $("proxyAccountList").innerHTML = accounts.map(account => {
+        const name = accountName(account);
+        const config = state.configs.get(String(account.id));
+        const mode = config?.mode || "error";
+        const modeLabel = config ? (modeLabels[mode] || "直连") : "读取失败";
+        return `<button class="proxy-account" type="button" data-account-id="${account.id}" aria-pressed="${String(account.id) === state.selectedID}">
+          <span class="proxy-account-avatar"><img src="/accounts/avatar?ref=${encodeURIComponent(account.id)}" alt=""><span hidden>${escapeHTML(Array.from(name)[0] || "Y")}</span></span>
+          <span class="proxy-account-copy"><strong>${escapeHTML(name)}</strong><small>ID ${account.id} · ${escapeHTML(account.status === "alive" ? "可用" : "需确认")}</small></span>
+          <span class="proxy-mode-badge ${mode}">${modeLabel}</span>
+        </button>`;
+      }).join("") || '<div class="proxy-list-empty">没有符合条件的账号。</div>';
+      $("proxyAccountList").querySelectorAll("img").forEach(image => image.addEventListener("error", () => { image.hidden = true; image.nextElementSibling.hidden = false; }));
+    }
+    function toggleFields() {
+      const mode = currentMode();
+      $("proxyType").disabled = mode === "direct";
+      $("staticProxyField").hidden = mode !== "static";
+      $("proxyAPIField").hidden = mode !== "api";
+      $("staticProxy").required = mode === "static";
+      $("proxyAPI").required = mode === "api";
+    }
+    function fillEditor(account, config) {
+      $("proxyEditorEmpty").hidden = true;
+      $("proxyEditor").hidden = false;
+      $("proxyAccountName").textContent = accountName(account);
+      $("proxyAccountMeta").textContent = `账号 ID ${account.id} · OpenID ${account.openid}`;
+      const mode = config?.mode || "direct";
+      const modeInput = document.querySelector(`input[name="proxyMode"][value="${mode}"]`) || $("proxyModeDirect");
+      modeInput.checked = true;
+      $("proxyType").value = config?.proxy_type || "http";
+      $("staticProxy").value = config?.static_proxy || "";
+      $("proxyAPI").value = config?.api_url || "";
+      toggleFields();
+      setFeedback(config?.configured ? `${modeLabels[mode]}已启用，当前协议为 ${config.proxy_type === "socks5" ? "SOCKS5" : "HTTP CONNECT"}。` : "当前账号使用直连。", "ok");
+    }
+    async function selectAccount(id, updateURL = true) {
+      const account = state.accounts.find(item => String(item.id) === String(id));
+      if (!account) return;
+      state.selectedID = String(account.id);
+      renderAccountList();
+      if (updateURL) history.replaceState(null, "", `/proxies?ref=${encodeURIComponent(account.id)}`);
+      $("backToAccount").href = `/?ref=${encodeURIComponent(account.id)}`;
+      let config = state.configs.get(state.selectedID);
+      if (!config) {
+        $("proxyEditorEmpty").hidden = true;
+        $("proxyEditor").hidden = false;
+        $("proxyAccountName").textContent = accountName(account);
+        $("proxyAccountMeta").textContent = `账号 ID ${account.id} · OpenID ${account.openid}`;
+        setFeedback("正在读取代理配置。");
+        try { config = await api(`/accounts/proxy?ref=${encodeURIComponent(account.id)}`); state.configs.set(state.selectedID, config); }
+        catch (error) { setFeedback(`读取失败：${error.message}`, "error"); return; }
+      }
+      if (state.selectedID === String(account.id)) fillEditor(account, config);
+    }
+    function proxyPayload() {
+      const account = currentAccount();
+      return { ref: String(account.id), mode: currentMode(), proxy_type: $("proxyType").value, static_proxy: $("staticProxy").value.trim(), api_url: $("proxyAPI").value.trim() };
+    }
+    async function loadPage() {
+      $("proxyAccountList").innerHTML = '<div class="proxy-skeleton"></div><div class="proxy-skeleton"></div><div class="proxy-skeleton"></div>';
+      $("proxyAccountCount").textContent = "正在加载";
+      state.accounts = await api("/accounts");
+      state.configs.clear();
+      await Promise.all(state.accounts.map(async account => {
+        try { state.configs.set(String(account.id), await api(`/accounts/proxy?ref=${encodeURIComponent(account.id)}`)); }
+        catch { /* The selected account retries on demand. */ }
+      }));
+      const requested = new URLSearchParams(location.search).get("ref");
+      const initial = state.accounts.find(account => String(account.id) === String(requested)) || state.accounts[0];
+      state.selectedID = initial ? String(initial.id) : "";
+      renderAccountList();
+      if (initial) { $("backToAccount").href = `/?ref=${encodeURIComponent(initial.id)}`; fillEditor(initial, state.configs.get(state.selectedID)); }
+      else { $("proxyEditor").hidden = true; $("proxyEditorEmpty").hidden = false; $("proxyEditorEmpty").textContent = "暂无账号，请先添加微信账号。"; }
+    }
+    $("proxyAccountList").addEventListener("click", event => { const button = event.target.closest("[data-account-id]"); if (button) selectAccount(button.dataset.accountId); });
+    $("proxyAccountSearch").addEventListener("input", renderAccountList);
+    document.querySelectorAll('input[name="proxyMode"]').forEach(input => input.addEventListener("change", toggleFields));
+    $("testProxy").addEventListener("click", async () => {
+      if (!currentAccount() || !$("proxyForm").reportValidity()) return;
+      const button = $("testProxy"); button.disabled = true; setFeedback("正在提取并校验代理。");
+      try { const result = await api("/accounts/proxy/test", { method: "POST", body: JSON.stringify(proxyPayload()) }); setFeedback(result.resolved ? `代理解析成功：${result.proxy}` : "直连模式无需代理。", "ok"); }
+      catch (error) { setFeedback(`代理测试失败：${error.message}`, "error"); }
+      finally { button.disabled = false; }
+    });
+    $("proxyForm").addEventListener("submit", async event => {
+      event.preventDefault();
+      if (!currentAccount()) return;
+      const button = $("saveProxy"); button.disabled = true; setFeedback("正在保存代理配置。");
+      try { const config = await api("/accounts/proxy", { method: "PUT", body: JSON.stringify(proxyPayload()) }); state.configs.set(state.selectedID, config); renderAccountList(); fillEditor(currentAccount(), config); setFeedback(config.configured ? "代理已保存，会话缓存已重建。" : "已切换为直连，会话缓存已重建。", "ok"); }
+      catch (error) { setFeedback(`保存失败：${error.message}`, "error"); }
+      finally { button.disabled = false; }
+    });
+    $("reloadProxyPage").addEventListener("click", () => loadPage().catch(error => { $("proxyAccountList").innerHTML = `<div class="proxy-list-empty">加载失败：${escapeHTML(error.message)}</div>`; }));
+    loadPage().catch(error => { $("proxyAccountCount").textContent = "加载失败"; $("proxyAccountList").innerHTML = `<div class="proxy-list-empty">${escapeHTML(error.message)}</div>`; });
+  </script>
+  <script src="/static/js/platform.js"></script>
+</body>
+</html>

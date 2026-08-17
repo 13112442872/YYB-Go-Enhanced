@@ -2,6 +2,7 @@
   const pages = {
     "/": ["工作台", "账号与能力调用"],
     "/scan": ["添加账号", "微信授权"],
+    "/proxies": ["代理设置", "账号网络出口"],
     "/runs": ["运行管理", "脚本任务与账号日志"],
     "/users": ["用户管理", "成员与访问权限"],
     "/settings": ["个人设置", "资料与安全"]
@@ -13,6 +14,7 @@
   const nav = [
     ["/", "台", "工作台", true, false],
     ["/scan", "+", "添加账号", true, false],
+    ["/proxies", "网", "代理设置", true, false],
     ["/runs", "运", "运行管理", true, false],
     ["/users", "人", "用户管理", false, true],
     ["/settings", "设", "个人设置", true, true],

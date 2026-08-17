@@ -54,7 +54,8 @@
     .placeholder { color:var(--muted); padding:6px 0; }
     .proxy-options { margin-bottom:18px; padding:12px; border:1px solid var(--line); border-radius:var(--radius); background:#fafafa; }
     .proxy-options summary { cursor:pointer; font-weight:700; }
-    .proxy-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px; }
+    .proxy-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:12px; }
+    .proxy-grid>* { min-width:0; }
     .proxy-wide { grid-column:1 / -1; }
     .proxy-message { min-height:18px; margin-top:8px; color:var(--muted); font-size:12px; overflow-wrap:anywhere; }
     @media (max-width:720px) { .topbar { padding:10px 16px; } .brand p { display:none; } main { margin:16px auto; grid-template-columns:1fr; } .actions .btn { flex:1 1 140px; } .proxy-grid { grid-template-columns:1fr; } .proxy-wide { grid-column:auto; } }
