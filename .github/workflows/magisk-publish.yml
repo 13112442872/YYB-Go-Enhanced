@@ -100,7 +100,7 @@ jobs:
           go version
           command -v zip
           command -v unzip
-          ./scripts/build-magisk.sh arm64
+          bash ./scripts/build-magisk.sh arm64
 
       - name: Publish GitHub Release
         if: steps.version.outputs.publish == 'true'

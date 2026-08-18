@@ -32,7 +32,7 @@ rooted ARM64 device, including service startup, console access, and QR login.
 The build host needs Go 1.23+, Bash, and `zip`.
 
 ```sh
-VERSION=0.1.4 VERSION_CODE=5 ./scripts/build-magisk.sh arm64
+VERSION=0.1.4 VERSION_CODE=5 bash ./scripts/build-magisk.sh arm64
 ```
 
 The ZIP is written to `dist/` and can be installed from the Magisk app.
