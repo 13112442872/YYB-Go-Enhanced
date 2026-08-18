@@ -11,6 +11,7 @@
   WEILE_SHARE_CLAIM_MAX   可选，每个账号本次最多领取几次分享福利，默认 6，最大 6
   WEILE_CARD_CLAIM_MAX    可选，每个账号本次最多领取几张分享金币卡，默认 3，最大 3
   WEILE_JPQ_CLAIM_MAX     可选，每个账号本次最多领取几次分享记牌器，默认 2，最大 2
+  WEILE_AD_JPQ_CLAIM_MAX  可选，每个账号本次最多领取几次广告记牌器，默认 2，最大 2
   WEILE_ENABLE_TRIAL      可选，查询并领取已真实达标的试玩任务，默认 1
   WEILE_ENABLE_FREE_GIFT  可选，领取娱乐馆每日免费奖励，默认 1
   WEILE_ENABLE_SUBSCRIBE  可选，是否领取订阅更新奖励，默认 1
@@ -443,59 +444,63 @@ class WeileClient:
             print(f"分享卡片领币当前进度：今日 {final_received}/{final_total} 张")
         return success
 
-    def claim_share_jpq(self, maximum: int, dry_run: bool) -> int:
+    def claim_free_jpq(self, share_maximum: int, ad_maximum: int, dry_run: bool) -> int:
         info = self.free_jpq_info()
-        share = info.get("share") or {}
-        if not isinstance(share, dict):
-            print("分享领记牌器：接口未返回分享任务")
-            return 0
-
-        used = int(share.get("used") or 0)
-        limit = int(share.get("limit") or 0)
-        func = str(share.get("func") or "jpq_free_share1")
-        print(
-            f"分享领记牌器：今日 {used}/{limit} 次，"
-            f"每次 {reward_text(info.get('rewards'))}"
-        )
-        claim_count = min(maximum, max(0, limit - used))
-        if dry_run or claim_count == 0:
-            return 0
-
         success = 0
-        for index in range(claim_count):
-            payload = self.activity(
-                "/shareaward/get",
-                {
-                    "func": func,
-                    "gameid": "0",
-                    "share_type": "share",
-                    "use_limit": "1",
-                    "ver": "4",
-                },
+        branches = (
+            ("share", "分享", share_maximum, "jpq_free_share1"),
+            ("ad", "广告", ad_maximum, "jpq_free_ad1"),
+        )
+        for share_type, label, maximum, default_func in branches:
+            task = info.get(share_type) or {}
+            if not isinstance(task, dict):
+                print(f"{label}领记牌器：接口未返回任务")
+                continue
+
+            used = int(task.get("used") or 0)
+            limit = int(task.get("limit") or 0)
+            func = str(task.get("func") or default_func)
+            print(
+                f"{label}领记牌器：今日 {used}/{limit} 次，"
+                f"每次 {reward_text(info.get('rewards'))}"
             )
-            if payload.get("status") != 0:
-                print(f"分享领记牌器停止：{safe_text(payload.get('msg'))}")
-                break
-            data = payload.get("data") or {}
-            award = data.get("award") if isinstance(data, dict) else None
-            rewards = list(award.items()) if isinstance(award, dict) else []
-            print(f"分享领记牌器成功：{reward_text(rewards)}")
-            success += 1
-            if index + 1 < claim_count:
-                delay = random.uniform(1.0, 2.0)
-                print(f"等待 {delay:.1f} 秒后继续领取记牌器...")
-                time.sleep(delay)
+            claim_count = min(maximum, max(0, limit - used))
+            if dry_run or claim_count == 0:
+                continue
+
+            for index in range(claim_count):
+                payload = self.activity(
+                    "/shareaward/get",
+                    {
+                        "func": func,
+                        "gameid": "0",
+                        "share_type": share_type,
+                        "use_limit": "1",
+                        "ver": "4",
+                    },
+                )
+                if payload.get("status") != 0:
+                    print(f"{label}领记牌器停止：{safe_text(payload.get('msg'))}")
+                    break
+                data = payload.get("data") or {}
+                award = data.get("award") if isinstance(data, dict) else None
+                rewards = list(award.items()) if isinstance(award, dict) else []
+                print(f"{label}领记牌器成功：{reward_text(rewards)}")
+                success += 1
+                if index + 1 < claim_count:
+                    delay = random.uniform(1.0, 2.0)
+                    print(f"等待 {delay:.1f} 秒后继续领取{label}记牌器...")
+                    time.sleep(delay)
 
         final_info = self.free_jpq_info()
-        final_share = final_info.get("share") or {}
-        final_used = int(final_share.get("used") or 0) if isinstance(final_share, dict) else 0
-        final_limit = (
-            int(final_share.get("limit") or limit) if isinstance(final_share, dict) else limit
-        )
-        if final_limit > 0 and final_used >= final_limit:
-            print(f"分享领记牌器已完成：今日 {final_used}/{final_limit} 次")
-        else:
-            print(f"分享领记牌器当前进度：今日 {final_used}/{final_limit} 次")
+        for share_type, label, _, _ in branches:
+            final_task = final_info.get(share_type) or {}
+            if not isinstance(final_task, dict):
+                continue
+            final_used = int(final_task.get("used") or 0)
+            final_limit = int(final_task.get("limit") or 0)
+            state = "已完成" if final_limit > 0 and final_used >= final_limit else "当前进度"
+            print(f"{label}领记牌器{state}：今日 {final_used}/{final_limit} 次")
         return success
 
     def trial_homepage(self) -> dict[str, Any]:
@@ -656,6 +661,7 @@ def main() -> None:
     share_max = env_int("WEILE_SHARE_CLAIM_MAX", 6, 0, 6)
     card_max = env_int("WEILE_CARD_CLAIM_MAX", 3, 0, 3)
     jpq_max = env_int("WEILE_JPQ_CLAIM_MAX", 2, 0, 2)
+    ad_jpq_max = env_int("WEILE_AD_JPQ_CLAIM_MAX", 2, 0, 2)
     enable_trial = env_flag("WEILE_ENABLE_TRIAL", True)
     enable_free_gift = env_flag("WEILE_ENABLE_FREE_GIFT", True)
     enable_subscription = env_flag("WEILE_ENABLE_SUBSCRIBE", True)
@@ -676,7 +682,7 @@ def main() -> None:
             client.query_summary()
             client.claim_share(share_max, dry_run)
             client.claim_share_cards(card_max, dry_run)
-            client.claim_share_jpq(jpq_max, dry_run)
+            client.claim_free_jpq(jpq_max, ad_jpq_max, dry_run)
             if enable_trial or enable_free_gift:
                 homepage = client.trial_homepage()
                 if enable_free_gift:
