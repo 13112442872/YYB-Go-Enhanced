@@ -9,6 +9,7 @@
   YYB_SERVER             必填，每行“YYB地址@账号ID或OpenID”
   WEILE_DRY_RUN           可选，设为 1 时只登录并查询，不领取
   WEILE_SHARE_CLAIM_MAX   可选，每个账号本次最多领取几次分享福利，默认 6，最大 6
+  WEILE_JPQ_CLAIM_MAX     可选，每个账号本次最多领取几次分享记牌器，默认 2，最大 2
   WEILE_ENABLE_SUBSCRIBE  可选，是否领取订阅更新奖励，默认 1
 
 依赖：requests
@@ -365,6 +366,68 @@ class WeileClient:
             print(f"分享福利当前进度：今日 {final_received}/{final_limit} 次")
         return success
 
+    def free_jpq_info(self) -> dict[str, Any]:
+        payload = self.activity("/shareaward/free-jpq/info")
+        if payload.get("status") != 0:
+            raise ScriptError(f"免费记牌器查询失败：{safe_text(payload.get('msg'))}")
+        data = payload.get("data") or {}
+        return data if isinstance(data, dict) else {}
+
+    def claim_share_jpq(self, maximum: int, dry_run: bool) -> int:
+        info = self.free_jpq_info()
+        share = info.get("share") or {}
+        if not isinstance(share, dict):
+            print("分享领记牌器：接口未返回分享任务")
+            return 0
+
+        used = int(share.get("used") or 0)
+        limit = int(share.get("limit") or 0)
+        func = str(share.get("func") or "jpq_free_share1")
+        print(
+            f"分享领记牌器：今日 {used}/{limit} 次，"
+            f"每次 {reward_text(info.get('rewards'))}"
+        )
+        claim_count = min(maximum, max(0, limit - used))
+        if dry_run or claim_count == 0:
+            return 0
+
+        success = 0
+        for index in range(claim_count):
+            payload = self.activity(
+                "/shareaward/get",
+                {
+                    "func": func,
+                    "gameid": "0",
+                    "share_type": "share",
+                    "use_limit": "1",
+                    "ver": "4",
+                },
+            )
+            if payload.get("status") != 0:
+                print(f"分享领记牌器停止：{safe_text(payload.get('msg'))}")
+                break
+            data = payload.get("data") or {}
+            award = data.get("award") if isinstance(data, dict) else None
+            rewards = list(award.items()) if isinstance(award, dict) else []
+            print(f"分享领记牌器成功：{reward_text(rewards)}")
+            success += 1
+            if index + 1 < claim_count:
+                delay = random.uniform(1.0, 2.0)
+                print(f"等待 {delay:.1f} 秒后继续领取记牌器...")
+                time.sleep(delay)
+
+        final_info = self.free_jpq_info()
+        final_share = final_info.get("share") or {}
+        final_used = int(final_share.get("used") or 0) if isinstance(final_share, dict) else 0
+        final_limit = (
+            int(final_share.get("limit") or limit) if isinstance(final_share, dict) else limit
+        )
+        if final_limit > 0 and final_used >= final_limit:
+            print(f"分享领记牌器已完成：今日 {final_used}/{final_limit} 次")
+        else:
+            print(f"分享领记牌器当前进度：今日 {final_used}/{final_limit} 次")
+        return success
+
     def subscription_templates(self) -> int:
         payload = self.activity("/commonset/subscribe/get_templates")
         if payload.get("status") != 0:
@@ -391,6 +454,7 @@ def main() -> None:
     load_remarks(accounts)
     dry_run = env_flag("WEILE_DRY_RUN", False)
     share_max = env_int("WEILE_SHARE_CLAIM_MAX", 6, 0, 6)
+    jpq_max = env_int("WEILE_JPQ_CLAIM_MAX", 2, 0, 2)
     enable_subscription = env_flag("WEILE_ENABLE_SUBSCRIBE", True)
 
     print("=" * 50)
@@ -408,6 +472,7 @@ def main() -> None:
             print(f"登录成功：{client.nickname or '未设置昵称'}")
             client.query_summary()
             client.claim_share(share_max, dry_run)
+            client.claim_share_jpq(jpq_max, dry_run)
             if enable_subscription:
                 client.claim_subscription(dry_run)
             completed += 1
