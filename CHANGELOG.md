@@ -6,6 +6,7 @@
 
 - Docker 多架构构建移除可下载 Action，改为工作流内生成 GHCR 标签，并为代码拉取、QEMU、Buildx、登录与构建推送增加最多 3 次重试，消除 GitHub/Codeload 在 Set up job 阶段下载 Action 失败的路径。
 - 新增独立 Magisk Actions：主分支自动编译校验 ARM64 模块，`magisk-v*` 标签自动创建 Release 并上传可安装 ZIP；Docker 与 Magisk 构建互不影响。
+- 新增 `scripts/weile_coin.py`：使用 YYB 动态登录微乐小游戏，支持多账号查询每日任务，并领取 HAR 已验证的分享福利金币和订阅更新金币。
 
 ## 2026-08-17
 
