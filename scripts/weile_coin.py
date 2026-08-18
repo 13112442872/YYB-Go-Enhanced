@@ -9,7 +9,10 @@
   YYB_SERVER             必填，每行“YYB地址@账号ID或OpenID”
   WEILE_DRY_RUN           可选，设为 1 时只登录并查询，不领取
   WEILE_SHARE_CLAIM_MAX   可选，每个账号本次最多领取几次分享福利，默认 6，最大 6
+  WEILE_CARD_CLAIM_MAX    可选，每个账号本次最多领取几张分享金币卡，默认 3，最大 3
   WEILE_JPQ_CLAIM_MAX     可选，每个账号本次最多领取几次分享记牌器，默认 2，最大 2
+  WEILE_ENABLE_TRIAL      可选，查询并领取已真实达标的试玩任务，默认 1
+  WEILE_ENABLE_FREE_GIFT  可选，领取娱乐馆每日免费奖励，默认 1
   WEILE_ENABLE_SUBSCRIBE  可选，是否领取订阅更新奖励，默认 1
 
 依赖：requests
@@ -373,6 +376,73 @@ class WeileClient:
         data = payload.get("data") or {}
         return data if isinstance(data, dict) else {}
 
+    def share_card_info(self) -> dict[str, Any]:
+        payload = self.activity("/shareaward/sharebean/info", {"version": "1"})
+        if payload.get("status") != 0:
+            raise ScriptError(f"分享卡片查询失败：{safe_text(payload.get('msg'))}")
+        data = payload.get("data") or {}
+        return data if isinstance(data, dict) else {}
+
+    def claim_share_cards(self, maximum: int, dry_run: bool) -> int:
+        info = self.share_card_info()
+        cards = info.get("cardList") or []
+        if not isinstance(cards, list):
+            print("分享卡片领币：接口未返回卡片列表")
+            return 0
+
+        received = sum(
+            1 for card in cards if isinstance(card, dict) and int(card.get("state") or 0) == 1
+        )
+        print(f"分享卡片领币：今日 {received}/{len(cards)} 张")
+        pending = [
+            card
+            for card in cards
+            if isinstance(card, dict)
+            and int(card.get("state") or 0) != 1
+            and card.get("id") is not None
+        ][:maximum]
+        if dry_run or not pending:
+            return 0
+
+        success = 0
+        for index, card in enumerate(pending):
+            card_id = str(card.get("id"))
+            expected = int(card.get("bean") or 0)
+            payload = self.activity(
+                "/shareaward/sharebean/update",
+                {"id": card_id, "version": "1"},
+            )
+            if payload.get("status") == 100:
+                print(f"分享卡片 {card_id} 已领取")
+                continue
+            if payload.get("status") != 0:
+                print(f"分享卡片领币停止：{safe_text(payload.get('msg'))}")
+                break
+            data = payload.get("data") or {}
+            awards = data.get("awards") if isinstance(data, dict) else None
+            rewards = list(awards.items()) if isinstance(awards, dict) else []
+            detail = reward_text(rewards) if rewards else f"微乐币 {expected}"
+            print(f"分享卡片领币成功：{detail}")
+            success += 1
+            if index + 1 < len(pending):
+                delay = random.uniform(1.0, 2.0)
+                print(f"等待 {delay:.1f} 秒后继续领取分享卡片...")
+                time.sleep(delay)
+
+        final_info = self.share_card_info()
+        final_cards = final_info.get("cardList") or []
+        final_received = sum(
+            1
+            for card in final_cards
+            if isinstance(card, dict) and int(card.get("state") or 0) == 1
+        )
+        final_total = len(final_cards) if isinstance(final_cards, list) else len(cards)
+        if final_total > 0 and final_received >= final_total:
+            print(f"分享卡片领币已完成：今日 {final_received}/{final_total} 张")
+        else:
+            print(f"分享卡片领币当前进度：今日 {final_received}/{final_total} 张")
+        return success
+
     def claim_share_jpq(self, maximum: int, dry_run: bool) -> int:
         info = self.free_jpq_info()
         share = info.get("share") or {}
@@ -428,6 +498,136 @@ class WeileClient:
             print(f"分享领记牌器当前进度：今日 {final_used}/{final_limit} 次")
         return success
 
+    def trial_homepage(self) -> dict[str, Any]:
+        payload = self.activity(
+            "/thirdparty/v4/minigame/integral/homepage",
+            {"os": "1", "sex": "0"},
+        )
+        if payload.get("status") != 0:
+            raise ScriptError(f"试玩活动查询失败：{safe_text(payload.get('msg'))}")
+        data = payload.get("data") or {}
+        return data if isinstance(data, dict) else {}
+
+    def claim_free_gift(self, homepage: dict[str, Any], dry_run: bool) -> bool:
+        received = bool(homepage.get("free_recv"))
+        if received:
+            print("娱乐馆每日免费奖励：已领取")
+            return False
+        if dry_run:
+            print("娱乐馆每日免费奖励：可尝试领取")
+            return False
+
+        payload = self.activity(
+            "/thirdparty/v2/minigame/integral/free/receive",
+            {"ver": "1"},
+        )
+        if payload.get("status") != 0:
+            print(f"娱乐馆每日免费奖励未领取：{safe_text(payload.get('msg'))}")
+            return False
+        data = payload.get("data") or {}
+        rewards: Any = None
+        if isinstance(data, dict):
+            rewards = data.get("rewards") or data.get("awards") or data.get("award")
+            if isinstance(rewards, dict):
+                rewards = list(rewards.items())
+        print(f"娱乐馆每日免费奖励领取成功：{reward_text(rewards)}")
+        return True
+
+    def claim_trial_rewards(
+        self,
+        homepage: dict[str, Any],
+        dry_run: bool,
+    ) -> int:
+        cp_items = homepage.get("cp_info") or []
+        if not isinstance(cp_items, list):
+            print("试玩任务：活动首页未返回游戏列表")
+            return 0
+
+        candidates = [
+            item
+            for item in cp_items
+            if isinstance(item, dict) and item.get("cpid") is not None
+        ]
+        print(f"试玩任务：发现 {len(candidates)} 款活动游戏")
+        success = 0
+        for item in candidates:
+            cpid = str(item.get("cpid"))
+            name = str(item.get("cp_name") or f"游戏 {cpid}")
+            payload = self.activity(
+                "/thirdparty/v4/minigame/integral/cp/info",
+                {"cpid": cpid, "ver": "5"},
+            )
+            if payload.get("status") != 0:
+                print(f"试玩任务 {name} 查询失败：{safe_text(payload.get('msg'))}")
+                continue
+            data = payload.get("data") or {}
+            tasks = data.get("tasks") if isinstance(data, dict) else []
+            if not isinstance(tasks, list):
+                print(f"试玩任务 {name}：未返回任务列表")
+                continue
+
+            pending: list[dict[str, Any]] = []
+            for task in tasks:
+                if not isinstance(task, dict):
+                    continue
+                try:
+                    current = int(task.get("curr_val") or 0)
+                    target = int(task.get("target") or 0)
+                    task_status = int(task.get("status") or 0)
+                    record_id = int(task.get("id") or 0)
+                except (TypeError, ValueError):
+                    continue
+                if task_status == 0 and target > 0 and current >= target and record_id > 0:
+                    pending.append(task)
+
+            completed = sum(
+                1
+                for task in tasks
+                if isinstance(task, dict) and int(task.get("status") or 0) > 0
+            )
+            daily = next(
+                (
+                    task
+                    for task in tasks
+                    if isinstance(task, dict) and int(task.get("task_type") or 0) == 1
+                ),
+                None,
+            )
+            progress = ""
+            if daily:
+                progress = (
+                    f"，{daily.get('task_name') or '每日任务'} "
+                    f"{daily.get('curr_val', 0)}/{daily.get('target', 0)}"
+                )
+            print(
+                f"试玩任务 {name}：已领取 {completed}/{len(tasks)}，"
+                f"当前可领 {len(pending)}{progress}"
+            )
+            if dry_run:
+                continue
+
+            for task in pending:
+                task_id = str(task.get("task_id"))
+                payload = self.activity(
+                    "/thirdparty/v4/minigame/integral/task/receive",
+                    {
+                        "cpid": cpid,
+                        "id": str(task.get("id")),
+                        "task_id": task_id,
+                        "ver": "5",
+                    },
+                )
+                task_name = str(task.get("task_name") or f"任务 {task_id}")
+                if payload.get("status") != 0:
+                    print(f"试玩任务 {name} - {task_name} 未领取：{safe_text(payload.get('msg'))}")
+                    continue
+                result = payload.get("data") or {}
+                rewards = result.get("rewards") if isinstance(result, dict) else None
+                print(f"试玩任务 {name} - {task_name} 领取成功：{reward_text(rewards)}")
+                success += 1
+                time.sleep(random.uniform(1.0, 2.0))
+        return success
+
     def subscription_templates(self) -> int:
         payload = self.activity("/commonset/subscribe/get_templates")
         if payload.get("status") != 0:
@@ -454,7 +654,10 @@ def main() -> None:
     load_remarks(accounts)
     dry_run = env_flag("WEILE_DRY_RUN", False)
     share_max = env_int("WEILE_SHARE_CLAIM_MAX", 6, 0, 6)
+    card_max = env_int("WEILE_CARD_CLAIM_MAX", 3, 0, 3)
     jpq_max = env_int("WEILE_JPQ_CLAIM_MAX", 2, 0, 2)
+    enable_trial = env_flag("WEILE_ENABLE_TRIAL", True)
+    enable_free_gift = env_flag("WEILE_ENABLE_FREE_GIFT", True)
     enable_subscription = env_flag("WEILE_ENABLE_SUBSCRIBE", True)
 
     print("=" * 50)
@@ -472,7 +675,14 @@ def main() -> None:
             print(f"登录成功：{client.nickname or '未设置昵称'}")
             client.query_summary()
             client.claim_share(share_max, dry_run)
+            client.claim_share_cards(card_max, dry_run)
             client.claim_share_jpq(jpq_max, dry_run)
+            if enable_trial or enable_free_gift:
+                homepage = client.trial_homepage()
+                if enable_free_gift:
+                    client.claim_free_gift(homepage, dry_run)
+                if enable_trial:
+                    client.claim_trial_rewards(homepage, dry_run)
             if enable_subscription:
                 client.claim_subscription(dry_run)
             completed += 1
