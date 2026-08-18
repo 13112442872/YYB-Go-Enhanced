@@ -2,6 +2,11 @@
 
 本项目按实际提交时间记录主要功能变化，便于部署后确认版本内容。
 
+## 2026-08-18
+
+- Docker 多架构构建移除可下载 Action，改为工作流内生成 GHCR 标签，并为代码拉取、QEMU、Buildx、登录与构建推送增加最多 3 次重试，消除 GitHub/Codeload 在 Set up job 阶段下载 Action 失败的路径。
+- 新增独立 Magisk Actions：主分支自动编译校验 ARM64 模块，`magisk-v*` 标签自动创建 Release 并上传可安装 ZIP；Docker 与 Magisk 构建互不影响。
+
 ## 2026-08-17
 
 - 增加账号独立代理：扫码、本机微信授权、OAuth 回调、凭据刷新、用户资料、`wx.login`、LongLink 和 ShortLink 统一使用账号代理。

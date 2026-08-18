@@ -74,7 +74,7 @@ YYB_AUTH_DSN=yyb_go:数据库密码@tcp(mysql:3306)/yyb_go?charset=utf8mb4&parse
 
 ## Magisk 模块
 
-Android ARM64 设备可安装 [Magisk v0.1.4](https://github.com/525815266/YYB-Go-Enhanced/releases/tag/magisk-v0.1.4)。模块由 `late_start service` 开机常驻运行，不依赖 Termux；默认控制台为 `http://127.0.0.1:8000`，账号和配置持久化在 `/data/adb/yyb-go`。v0.1.4 已通过官方 Magisk 真机安装、进入控制台和扫码验证。
+Android ARM64 设备可从 [Releases](https://github.com/525815266/YYB-Go-Enhanced/releases) 安装最新版 Magisk 模块。模块由 `late_start service` 开机常驻运行，不依赖 Termux；默认控制台为 `http://127.0.0.1:8000`，账号和配置持久化在 `/data/adb/yyb-go`。v0.1.4 已通过官方 Magisk 真机安装、进入控制台和扫码验证。
 
 模块目前只提供 ARM64 构建，不支持 32 位 Android。需要让青龙或呆呆面板访问手机服务时，必须在 `/data/adb/yyb-go/config.conf` 中配置局域网监听和面板地址；不要把端口暴露到公网。完整安装、升级、DNS 和局域网配置见 [Magisk 模块文档](docs/magisk.md)。
 
@@ -93,6 +93,9 @@ Android ARM64 设备可安装 [Magisk v0.1.4](https://github.com/525815266/YYB-G
 - **手动触发构建**：在 GitHub 仓库页面进入 **Actions** -> 选择 **Build and Publish Docker Image** Workflow -> 点击 **Run workflow**，可自定义填入镜像 Tag（默认 `latest`）并一键构建发布。
 - **自动触发构建**：当推送分支到 `main` 或推送版本 Tag (如 `v1.0.0`) 时自动触发镜像构建。
 - **支持架构**：多架构支持 (`linux/amd64`, `linux/arm64`)。
+- **失败恢复**：代码拉取、QEMU 初始化、Buildx 启动、GHCR 登录及镜像构建推送均最多重试 3 次；镜像标签由工作流直接生成，不依赖需要在 Set up job 下载的第三方 Action。
+
+Magisk 模块使用独立的 `Build Magisk Module` Workflow：主分支每次提交都会编译并校验 ARM64 安装包；推送 `magisk-v0.1.5` 这类标签时，会自动创建对应 Release 并上传 ZIP。也可在 Actions 页面手动填写版本并选择是否发布 Release。Docker 与 Magisk 为两条独立任务，一方失败不会阻塞另一方。
 
 ## 本机微信快速授权
 
