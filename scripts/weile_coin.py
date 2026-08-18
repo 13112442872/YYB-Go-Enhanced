@@ -8,7 +8,7 @@
 环境变量：
   YYB_SERVER             必填，每行“YYB地址@账号ID或OpenID”
   WEILE_DRY_RUN           可选，设为 1 时只登录并查询，不领取
-  WEILE_SHARE_CLAIM_MAX   可选，每次运行最多领取几次分享福利，默认 1，最大 6
+  WEILE_SHARE_CLAIM_MAX   可选，每个账号本次最多领取几次分享福利，默认 6，最大 6
   WEILE_ENABLE_SUBSCRIBE  可选，是否领取订阅更新奖励，默认 1
 
 依赖：requests
@@ -352,7 +352,17 @@ class WeileClient:
             print(f"分享福利领取成功：{reward_text(data.get('rewards'))}")
             success += 1
             if index + 1 < claim_count:
-                time.sleep(random.uniform(1.5, 3.0))
+                delay = random.uniform(1.0, 2.0)
+                print(f"等待 {delay:.1f} 秒后继续领取...")
+                time.sleep(delay)
+
+        final_info = self.share_info()
+        final_received = int(final_info.get("receive_times") or 0)
+        final_limit = int(final_info.get("limit") or limit)
+        if final_limit > 0 and final_received >= final_limit:
+            print(f"分享福利已完成：今日 {final_received}/{final_limit} 次")
+        else:
+            print(f"分享福利当前进度：今日 {final_received}/{final_limit} 次")
         return success
 
     def subscription_templates(self) -> int:
@@ -380,7 +390,7 @@ def main() -> None:
     accounts = parse_accounts()
     load_remarks(accounts)
     dry_run = env_flag("WEILE_DRY_RUN", False)
-    share_max = env_int("WEILE_SHARE_CLAIM_MAX", 1, 0, 6)
+    share_max = env_int("WEILE_SHARE_CLAIM_MAX", 6, 0, 6)
     enable_subscription = env_flag("WEILE_ENABLE_SUBSCRIBE", True)
 
     print("=" * 50)
