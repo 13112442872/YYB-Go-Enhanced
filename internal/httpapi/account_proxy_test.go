@@ -51,6 +51,15 @@ func TestAccountProxyAPIAndDirectOverride(t *testing.T) {
 	}
 }
 
+func TestProxySettingPublicUsesAccountTokenTTL(t *testing.T) {
+	setting := &store.AccountProxySetting{AccountID: 7, Mode: "api", ProxyType: "http", RefreshAheadSeconds: 300}
+	account := &store.WechatAccount{Credentials: map[string]any{"expires_in": float64(5400)}}
+	result := proxySettingPublic(setting, account)
+	if result["token_ttl_minutes"] != int64(90) {
+		t.Fatalf("token_ttl_minutes = %#v, want 90", result["token_ttl_minutes"])
+	}
+}
+
 func TestAccountProxyAPIParsesJSON2AndCascades(t *testing.T) {
 	t.Setenv("GIN_MODE", "test")
 	proxyAPI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

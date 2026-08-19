@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 
+	"yyb_go/internal/protocol"
 	"yyb_go/internal/proxysource"
 	"yyb_go/internal/qr"
 	"yyb_go/internal/store"
@@ -47,13 +48,16 @@ func proxySpecFromSetting(setting *store.AccountProxySetting) proxysource.Spec {
 	}
 }
 
-func proxySettingPublic(setting *store.AccountProxySetting) map[string]any {
+func proxySettingPublic(setting *store.AccountProxySetting, account *store.WechatAccount) map[string]any {
+	expiresIn := protocol.CredentialsFromMap(account.Credentials).ExpiresIn
+	tokenTTLMinutes := (expiresIn + 59) / 60
 	return map[string]any{
 		"account_id": setting.AccountID, "mode": setting.Mode, "proxy_type": setting.ProxyType,
 		"static_proxy": setting.StaticProxy, "api_url": setting.APIURL,
 		"provider_profile_id": setting.ProviderProfileID,
 		"region_code":         setting.RegionCode, "region_province": setting.RegionProvince, "region_city": setting.RegionCity,
 		"refresh_ahead_minutes": setting.RefreshAheadSeconds / 60,
+		"token_ttl_minutes":     tokenTTLMinutes,
 		"configured":            setting.Mode != "direct", "updated_at": setting.UpdatedAt,
 	}
 }
@@ -70,7 +74,7 @@ func (a *App) handleAccountProxy(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		writeJSON(w, http.StatusOK, proxySettingPublic(setting))
+		writeJSON(w, http.StatusOK, proxySettingPublic(setting, acc))
 	case http.MethodPut:
 		var body accountProxyIn
 		if err := decodeOptionalJSON(r, &body); err != nil {
@@ -95,7 +99,7 @@ func (a *App) handleAccountProxy(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		writeJSON(w, http.StatusOK, proxySettingPublic(setting))
+		writeJSON(w, http.StatusOK, proxySettingPublic(setting, acc))
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}

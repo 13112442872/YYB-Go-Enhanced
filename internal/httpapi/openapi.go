@@ -511,6 +511,7 @@ func newOpenAPISpec() map[string]any {
 					"region_province":       map[string]any{"type": "string"},
 					"region_city":           map[string]any{"type": "string"},
 					"refresh_ahead_minutes": map[string]any{"type": "integer", "minimum": 5, "maximum": 90},
+					"token_ttl_minutes":     map[string]any{"type": "integer", "minimum": 1, "description": "该账号最近一次应用宝响应中的令牌有效期，用于估算实际刷新周期。"},
 					"configured":            map[string]any{"type": "boolean"},
 					"updated_at":            int64Schema(),
 				}),
