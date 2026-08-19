@@ -444,12 +444,14 @@ func newOpenAPISpec() map[string]any {
 					"created_at":                int64Schema(),
 					"updated_at":                int64Schema(),
 				}),
-				"RefreshResult": objectSchema([]string{"id", "openid", "status"}, map[string]any{
-					"id":       int64Schema(),
-					"openid":   map[string]any{"type": "string"},
-					"uin":      nullableInt64Schema(),
-					"nickname": nullableStringSchema("账号昵称。"),
-					"status":   map[string]any{"type": "string", "example": "alive"},
+				"RefreshResult": objectSchema([]string{"id", "openid", "status", "rescan_required"}, map[string]any{
+					"id":              int64Schema(),
+					"openid":          map[string]any{"type": "string"},
+					"uin":             nullableInt64Schema(),
+					"nickname":        nullableStringSchema("账号昵称。"),
+					"status":          map[string]any{"type": "string", "example": "alive"},
+					"rescan_required": map[string]any{"type": "boolean", "description": "仅在服务端明确判定登录凭证失效时为 true。"},
+					"refresh_error":   nullableStringSchema("本次刷新失败原因；临时网络错误不代表账号失效。"),
 				}),
 				"DeleteAccountResponse": objectSchema([]string{"deleted", "openid", "qinglong_cleanup", "env_entries_removed", "tasks_deleted"}, map[string]any{
 					"deleted":             int64Schema(),

@@ -2,8 +2,10 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"yyb_go/internal/protocol"
@@ -67,14 +69,14 @@ func (a *App) refreshDueAccounts(ctx context.Context) {
 	}
 }
 
-func (a *App) refreshLiveness(ctx context.Context, acc *store.WechatAccount) string {
-	status, _, _ := a.refreshAccount(ctx, acc, true)
-	return a.finishLivenessRefresh(ctx, acc, status)
+func (a *App) refreshLiveness(ctx context.Context, acc *store.WechatAccount) (string, error) {
+	status, _, err := a.refreshAccount(ctx, acc, false)
+	return a.finishLivenessRefresh(ctx, acc, status), err
 }
 
-func (a *App) refreshLivenessWithProxy(ctx context.Context, acc *store.WechatAccount, proxyValue string, fallbackDirect bool) string {
-	status, _, _ := a.refreshAccountWithPolicy(ctx, acc, true, proxyValue, fallbackDirect, true)
-	return a.finishLivenessRefresh(ctx, acc, status)
+func (a *App) refreshLivenessWithProxy(ctx context.Context, acc *store.WechatAccount, proxyValue string, fallbackDirect bool) (string, error) {
+	status, _, err := a.refreshAccountWithPolicy(ctx, acc, true, proxyValue, fallbackDirect, true)
+	return a.finishLivenessRefresh(ctx, acc, status), err
 }
 
 func (a *App) finishLivenessRefresh(ctx context.Context, acc *store.WechatAccount, status string) string {
@@ -126,10 +128,7 @@ func (a *App) refreshAccountWithPolicy(ctx context.Context, acc *store.WechatAcc
 	}
 	result, err := a.refreshLoginBufferWithProxy(ctx, creds, proxyValue, fallbackDirect)
 	if err != nil {
-		status := accountStatus(latest)
-		if force || creds.ExpiresAt <= time.Now().Unix() {
-			status = "expired"
-		}
+		status := refreshFailureStatus(accountStatus(latest), creds, err, time.Now())
 		if setErr := a.db.SetAccountStatus(ctx, latest.ID, status); setErr != nil {
 			err = fmt.Errorf("%v; update status: %w", err, setErr)
 		}
@@ -139,6 +138,35 @@ func (a *App) refreshAccountWithPolicy(ctx context.Context, acc *store.WechatAcc
 		return "expired", false, err
 	}
 	return "alive", true, nil
+}
+
+func refreshFailureStatus(current string, creds protocol.LoginBufferCredentials, err error, now time.Time) string {
+	if definitiveCredentialFailure(err) {
+		return "expired"
+	}
+	if creds.ExpiresAt > now.Unix() {
+		return current
+	}
+	return "unknown"
+}
+
+func definitiveCredentialFailure(err error) bool {
+	if errors.Is(err, protocol.ErrMissingRefreshToken) {
+		return true
+	}
+	var rejected *protocol.RefreshRejectedError
+	if !errors.As(err, &rejected) {
+		return false
+	}
+	message := strings.ToLower(strings.TrimSpace(rejected.Message))
+	invalid := strings.Contains(message, "invalid") || strings.Contains(message, "expired") ||
+		strings.Contains(message, "expire") || strings.Contains(message, "无效") ||
+		strings.Contains(message, "过期") || strings.Contains(message, "失效")
+	token := strings.Contains(message, "token") || strings.Contains(message, "登录") ||
+		strings.Contains(message, "凭证") || strings.Contains(message, "授权")
+	relogin := strings.Contains(message, "relogin") || strings.Contains(message, "re-login") ||
+		strings.Contains(message, "重新登录") || strings.Contains(message, "重新授权")
+	return relogin || (invalid && token)
 }
 
 func (a *App) accountRefreshAhead(ctx context.Context, accountID int64) (time.Duration, error) {

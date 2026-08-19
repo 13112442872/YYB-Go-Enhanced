@@ -563,8 +563,8 @@ func (a *App) handleAccountRefresh(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	status := a.refreshLiveness(r.Context(), acc)
-	writeJSON(w, http.StatusOK, refreshOut(acc, status))
+	status, refreshErr := a.refreshLiveness(r.Context(), acc)
+	writeJSON(w, http.StatusOK, refreshOut(acc, status, refreshErr))
 }
 
 func (a *App) handleAccountResync(w http.ResponseWriter, r *http.Request) {
@@ -750,7 +750,7 @@ func (a *App) handleWXGetUserInfo(w http.ResponseWriter, r *http.Request) {
 	creds := protocol.CredentialsFromMap(acc.Credentials)
 	info, err := a.fetchUserInfoWithProxy(r.Context(), creds, proxyValue, fallbackDirect)
 	if err != nil {
-		if status := a.refreshLivenessWithProxy(r.Context(), acc, proxyValue, fallbackDirect); status == "alive" {
+		if status, _ := a.refreshLivenessWithProxy(r.Context(), acc, proxyValue, fallbackDirect); status == "alive" {
 			if fresh, getErr := a.db.GetAccount(r.Context(), acc.ID); getErr == nil {
 				acc = fresh
 				info, err = a.fetchUserInfoWithProxy(r.Context(), protocol.CredentialsFromMap(acc.Credentials), proxyValue, fallbackDirect)
@@ -867,7 +867,8 @@ func (a *App) refreshAll(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]map[string]any, 0, len(accounts))
 	for _, acc := range accounts {
-		out = append(out, refreshOut(acc, a.refreshLiveness(r.Context(), acc)))
+		status, refreshErr := a.refreshLiveness(r.Context(), acc)
+		out = append(out, refreshOut(acc, status, refreshErr))
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -944,9 +945,15 @@ func (a *App) invokeWXApp(ctx context.Context, acc *store.WechatAccount, appID s
 		}
 		_ = a.db.InvalidateSession(ctx, acc.ID, proxyValue)
 	}
-	status := a.refreshLivenessWithProxy(ctx, acc, proxyValue, fallbackDirect)
+	status, refreshErr := a.refreshLivenessWithProxy(ctx, acc, proxyValue, fallbackDirect)
 	if status != "alive" {
-		return nil, accountExpiredError{openid: acc.OpenID}
+		if status == "expired" {
+			return nil, accountExpiredError{openid: acc.OpenID}
+		}
+		return nil, fmt.Errorf("refresh account credentials: %w", refreshErr)
+	}
+	if refreshErr != nil {
+		return nil, fmt.Errorf("refresh account credentials: %w", refreshErr)
 	}
 	fresh, err := a.db.GetAccount(ctx, acc.ID)
 	if err == nil && fresh != nil {
@@ -967,8 +974,15 @@ func (a *App) invokeOperateWXData(ctx context.Context, acc *store.WechatAccount,
 	return a.pool.OperateWXData(ctx, acc.LoginBuffer, appID, payload, acc.ID, proxyValue, fallbackDirect)
 }
 
-func refreshOut(acc *store.WechatAccount, status string) map[string]any {
-	return map[string]any{"id": acc.ID, "openid": acc.OpenID, "uin": acc.UIN, "nickname": acc.Nickname, "status": status}
+func refreshOut(acc *store.WechatAccount, status string, refreshErr error) map[string]any {
+	out := map[string]any{
+		"id": acc.ID, "openid": acc.OpenID, "uin": acc.UIN, "nickname": acc.Nickname,
+		"status": status, "rescan_required": status == "expired",
+	}
+	if refreshErr != nil {
+		out["refresh_error"] = refreshErr.Error()
+	}
+	return out
 }
 
 func pickNickname(userInfo map[string]any, fallback string) string {

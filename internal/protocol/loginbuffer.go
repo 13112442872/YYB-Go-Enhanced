@@ -6,12 +6,24 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
 	"net/http"
 	"time"
 )
+
+var ErrMissingRefreshToken = errors.New("missing refresh token")
+
+type RefreshRejectedError struct {
+	Code    int
+	Message string
+}
+
+func (e *RefreshRejectedError) Error() string {
+	return fmt.Sprintf("refresh failed: code=%d msg=%s", e.Code, e.Message)
+}
 
 const (
 	yybHost         = "https://yybadaccess.3g.qq.com"
@@ -130,7 +142,7 @@ func (c *LoginBufferClient) FetchLoginBuffer(ctx context.Context, creds LoginBuf
 
 func (c *LoginBufferClient) RefreshCredentials(ctx context.Context, creds LoginBufferCredentials) (LoginBufferCredentials, error) {
 	if creds.RefreshToken == "" {
-		return LoginBufferCredentials{}, fmt.Errorf("missing refresh token")
+		return LoginBufferCredentials{}, ErrMissingRefreshToken
 	}
 	body, err := json.Marshal(refreshTokenRequest{UserInfo: refreshTokenUserInfo{
 		OpenID:       creds.OpenID,
@@ -152,8 +164,8 @@ func (c *LoginBufferClient) RefreshCredentials(ctx context.Context, creds LoginB
 	}, &data); err != nil {
 		return LoginBufferCredentials{}, err
 	}
-	if intFromAny(data["code"]) != 0 {
-		return LoginBufferCredentials{}, fmt.Errorf("refresh failed: code=%v msg=%v", data["code"], data["msg"])
+	if code := intFromAny(data["code"]); code != 0 {
+		return LoginBufferCredentials{}, &RefreshRejectedError{Code: code, Message: fmt.Sprint(data["msg"])}
 	}
 	info, _ := data["user_info"].(map[string]any)
 	expiresIn := defaultInt64(int64FromMap(info, "expires_in"), 7200)

@@ -106,6 +106,92 @@ func TestRefreshAccountRetriesAfterFailure(t *testing.T) {
 	}
 }
 
+func TestManualLivenessCheckDoesNotRotateFreshCredentials(t *testing.T) {
+	app := newKeepAliveTestApp(t)
+	defer app.Close()
+
+	acc := insertKeepAliveTestAccount(t, app, "openid-manual-fresh", time.Now().Add(2*time.Hour))
+	calls := 0
+	app.refreshLoginBuffer = func(_ context.Context, _ protocol.LoginBufferCredentials) (protocol.LoginBufferResult, error) {
+		calls++
+		return protocol.LoginBufferResult{}, errors.New("should not refresh fresh credentials")
+	}
+
+	status, err := app.refreshLiveness(context.Background(), acc)
+	if err != nil || status != "alive" || calls != 0 {
+		t.Fatalf("refreshLiveness() = status %q, calls %d, error %v", status, calls, err)
+	}
+}
+
+func TestForcedTransientRefreshFailureDoesNotExpireFreshAccount(t *testing.T) {
+	app := newKeepAliveTestApp(t)
+	defer app.Close()
+
+	acc := insertKeepAliveTestAccount(t, app, "openid-force-transient", time.Now().Add(2*time.Hour))
+	app.refreshLoginBuffer = func(_ context.Context, _ protocol.LoginBufferCredentials) (protocol.LoginBufferResult, error) {
+		return protocol.LoginBufferResult{}, errors.New("proxy connection timed out")
+	}
+
+	status, refreshed, err := app.refreshAccount(context.Background(), acc, true)
+	if err == nil || refreshed || status != "alive" {
+		t.Fatalf("forced refresh = status %q, refreshed %v, error %v", status, refreshed, err)
+	}
+	updated, getErr := app.db.GetAccount(context.Background(), acc.ID)
+	if getErr != nil || accountStatus(updated) != "alive" {
+		t.Fatalf("stored account = status %q, error %v", accountStatus(updated), getErr)
+	}
+}
+
+func TestTransientRefreshFailureAfterAccessExpiryRemainsRetryable(t *testing.T) {
+	app := newKeepAliveTestApp(t)
+	defer app.Close()
+
+	acc := insertKeepAliveTestAccount(t, app, "openid-expired-access", time.Now().Add(-time.Minute))
+	app.refreshLoginBuffer = func(_ context.Context, _ protocol.LoginBufferCredentials) (protocol.LoginBufferResult, error) {
+		return protocol.LoginBufferResult{}, errors.New("proxy API temporarily unavailable")
+	}
+
+	status, refreshed, err := app.refreshAccount(context.Background(), acc, false)
+	if err == nil || refreshed || status != "unknown" {
+		t.Fatalf("expired access refresh = status %q, refreshed %v, error %v", status, refreshed, err)
+	}
+	updated, getErr := app.db.GetAccount(context.Background(), acc.ID)
+	if getErr != nil || accountStatus(updated) != "unknown" {
+		t.Fatalf("stored account = status %q, error %v", accountStatus(updated), getErr)
+	}
+}
+
+func TestDefinitiveRefreshRejectionExpiresAccount(t *testing.T) {
+	app := newKeepAliveTestApp(t)
+	defer app.Close()
+
+	acc := insertKeepAliveTestAccount(t, app, "openid-refresh-rejected", time.Now().Add(2*time.Hour))
+	app.refreshLoginBuffer = func(_ context.Context, _ protocol.LoginBufferCredentials) (protocol.LoginBufferResult, error) {
+		return protocol.LoginBufferResult{}, &protocol.RefreshRejectedError{Code: 401, Message: "refresh token expired"}
+	}
+
+	status, refreshed, err := app.refreshAccount(context.Background(), acc, true)
+	if err == nil || refreshed || status != "expired" {
+		t.Fatalf("rejected refresh = status %q, refreshed %v, error %v", status, refreshed, err)
+	}
+	updated, getErr := app.db.GetAccount(context.Background(), acc.ID)
+	if getErr != nil || accountStatus(updated) != "expired" {
+		t.Fatalf("stored account = status %q, error %v", accountStatus(updated), getErr)
+	}
+}
+
+func TestRefreshOutDistinguishesRetryFromRescan(t *testing.T) {
+	acc := &store.WechatAccount{ID: 7, OpenID: "openid-refresh-output"}
+	retry := refreshOut(acc, "unknown", errors.New("proxy timeout"))
+	if retry["rescan_required"] != false || retry["refresh_error"] != "proxy timeout" {
+		t.Fatalf("retry output = %#v", retry)
+	}
+	rescan := refreshOut(acc, "expired", &protocol.RefreshRejectedError{Code: 401, Message: "token expired"})
+	if rescan["rescan_required"] != true {
+		t.Fatalf("rescan output = %#v", rescan)
+	}
+}
+
 func TestCloseStopsKeepAliveLoop(t *testing.T) {
 	app, err := NewApp(Config{
 		ResourceRoot:      t.TempDir(),
