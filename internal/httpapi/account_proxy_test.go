@@ -8,8 +8,12 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
+
+	"yyb_go/internal/proxysource"
+	"yyb_go/internal/store"
 )
 
 func TestAccountProxyAPIAndDirectOverride(t *testing.T) {
@@ -93,5 +97,117 @@ func TestAccountProxyAPIParsesJSON2AndCascades(t *testing.T) {
 	}
 	if _, err := app.db.GetAccountProxySetting(context.Background(), account.ID); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("proxy setting after account deletion error = %v", err)
+	}
+}
+
+func TestIPZanProfilesCanBeNamedAndBoundByRegion(t *testing.T) {
+	t.Setenv("GIN_MODE", "test")
+	app, err := NewApp(Config{ResourceRoot: t.TempDir(), RequestTimeout: time.Second})
+	if err != nil {
+		t.Fatalf("NewApp() error = %v", err)
+	}
+	defer app.Close()
+	status := "alive"
+	account, err := app.db.UpsertAccount(context.Background(), "ipzan-openid", "buffer", nil, nil, nil, nil, nil, &status)
+	if err != nil {
+		t.Fatalf("UpsertAccount() error = %v", err)
+	}
+	handler := app.Handler()
+	created := apiRequest(t, handler, http.MethodPost, "/api/proxy-profiles", map[string]any{
+		"name": "品赞代理 1", "provider": "ipzan", "proxy_type": "http",
+		"api_url": "https://service.ipzan.com/core-extract?no=123&secret=test&format=json&area=110000",
+	})
+	if created.Code != http.StatusCreated {
+		t.Fatalf("POST /api/proxy-profiles status = %d body=%s", created.Code, created.Body.String())
+	}
+	var profileResponse struct {
+		Data struct {
+			ID int64 `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(created.Body.Bytes(), &profileResponse); err != nil || profileResponse.Data.ID == 0 {
+		t.Fatalf("decode profile response = %#v, %v", profileResponse, err)
+	}
+	profileID := profileResponse.Data.ID
+	saved := apiRequest(t, handler, http.MethodPut, "/accounts/proxy", map[string]any{
+		"ref": fmt.Sprint(account.ID), "mode": "api", "provider_profile_id": profileID,
+		"region_code": "370100", "region_province": "山东省", "region_city": "济南市",
+		"refresh_ahead_minutes": 15,
+	})
+	if saved.Code != http.StatusOK {
+		t.Fatalf("PUT /accounts/proxy status = %d body=%s", saved.Code, saved.Body.String())
+	}
+	setting, err := app.db.GetAccountProxySetting(context.Background(), account.ID)
+	if err != nil || setting.ProviderProfileID == nil || *setting.ProviderProfileID != profileID || setting.APIURL != "" || setting.RegionCode != "370100" || setting.RefreshAheadSeconds != 900 {
+		t.Fatalf("saved profile setting = %#v, %v", setting, err)
+	}
+	spec, err := app.proxySpecForSetting(context.Background(), setting)
+	if err != nil || !strings.Contains(spec.APIURL, "area=370100") || !strings.Contains(spec.APIURL, "protocol=1") || strings.Contains(spec.APIURL, "area=110000") {
+		t.Fatalf("resolved profile spec = %#v, %v", spec, err)
+	}
+	deleted := apiRequest(t, handler, http.MethodDelete, fmt.Sprintf("/api/proxy-profiles/%d", profileID), nil)
+	if deleted.Code != http.StatusConflict {
+		t.Fatalf("DELETE bound profile status = %d body=%s", deleted.Code, deleted.Body.String())
+	}
+}
+
+func TestExistingAccountRescanPreservesProxySetting(t *testing.T) {
+	t.Setenv("GIN_MODE", "test")
+	app, err := NewApp(Config{ResourceRoot: t.TempDir(), RequestTimeout: time.Second})
+	if err != nil {
+		t.Fatalf("NewApp() error = %v", err)
+	}
+	defer app.Close()
+	status := "expired"
+	account, err := app.db.UpsertAccount(context.Background(), "rescan-openid", "old-buffer", nil, nil, nil, nil, nil, &status)
+	if err != nil {
+		t.Fatalf("UpsertAccount() error = %v", err)
+	}
+	profile, err := app.db.CreateProxyProviderProfile(context.Background(), "品赞代理 2", "ipzan", "http", "https://service.ipzan.com/core-extract?no=2&secret=x")
+	if err != nil {
+		t.Fatalf("CreateProxyProviderProfile() error = %v", err)
+	}
+	if _, err := app.db.UpsertAccountProxySetting(context.Background(), account.ID, "api", "http", "", "", &profile.ID, "370100", "山东省", "济南市", 300); err != nil {
+		t.Fatalf("UpsertAccountProxySetting() error = %v", err)
+	}
+	direct, _ := proxysource.NormalizeSpec(proxysource.Spec{Mode: "direct"})
+	if err := app.saveNewAccountProxy(context.Background(), account.ID, true, accountProxyIn{Mode: "direct"}, direct); err != nil {
+		t.Fatalf("saveNewAccountProxy() error = %v", err)
+	}
+	setting, err := app.db.GetAccountProxySetting(context.Background(), account.ID)
+	if err != nil || setting.ProviderProfileID == nil || *setting.ProviderProfileID != profile.ID || setting.RegionCode != "370100" {
+		t.Fatalf("proxy after rescan = %#v, %v", setting, err)
+	}
+}
+
+func TestExpiredAccountRejectsBeforeResolvingProxy(t *testing.T) {
+	t.Setenv("GIN_MODE", "test")
+	proxyCalls := 0
+	proxyAPI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		proxyCalls++
+		_, _ = w.Write([]byte("203.0.113.10:8080"))
+	}))
+	defer proxyAPI.Close()
+	app, err := NewApp(Config{ResourceRoot: t.TempDir(), RequestTimeout: time.Second})
+	if err != nil {
+		t.Fatalf("NewApp() error = %v", err)
+	}
+	defer app.Close()
+	status := "expired"
+	account, err := app.db.UpsertAccount(context.Background(), "expired-openid", "buffer", nil, nil, nil, nil, nil, &status)
+	if err != nil {
+		t.Fatalf("UpsertAccount() error = %v", err)
+	}
+	if _, err := app.db.UpsertAccountProxySetting(context.Background(), account.ID, "api", "http", "", proxyAPI.URL, nil, "", "", "", 300); err != nil {
+		t.Fatalf("UpsertAccountProxySetting() error = %v", err)
+	}
+	callCount := 0
+	_, err = app.invokeWXApp(context.Background(), account, "wx0000000000000000", nil, func(context.Context, *store.WechatAccount, string, map[string]any, string, bool) (map[string]any, error) {
+		callCount++
+		return map[string]any{}, nil
+	})
+	var expired accountExpiredError
+	if !errors.As(err, &expired) || proxyCalls != 0 || callCount != 0 {
+		t.Fatalf("invokeWXApp() err=%v proxyCalls=%d callCount=%d", err, proxyCalls, callCount)
 	}
 }

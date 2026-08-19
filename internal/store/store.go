@@ -75,14 +75,29 @@ CREATE TABLE IF NOT EXISTS account_push_settings (
     updated_at     INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS proxy_provider_profiles (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT    NOT NULL UNIQUE,
+    provider   TEXT    NOT NULL DEFAULT 'ipzan',
+    proxy_type TEXT    NOT NULL DEFAULT 'http',
+    api_url    TEXT    NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS account_proxy_settings (
-    account_id   INTEGER PRIMARY KEY REFERENCES wechat_accounts(id) ON DELETE CASCADE,
-    mode         TEXT    NOT NULL DEFAULT 'direct',
-    proxy_type   TEXT    NOT NULL DEFAULT 'http',
-    static_proxy TEXT    NOT NULL DEFAULT '',
-    api_url      TEXT    NOT NULL DEFAULT '',
-    created_at   INTEGER NOT NULL,
-    updated_at   INTEGER NOT NULL
+    account_id             INTEGER PRIMARY KEY REFERENCES wechat_accounts(id) ON DELETE CASCADE,
+    mode                   TEXT    NOT NULL DEFAULT 'direct',
+    proxy_type             TEXT    NOT NULL DEFAULT 'http',
+    static_proxy           TEXT    NOT NULL DEFAULT '',
+    api_url                TEXT    NOT NULL DEFAULT '',
+    provider_profile_id    INTEGER,
+    region_code            TEXT    NOT NULL DEFAULT '',
+    region_province        TEXT    NOT NULL DEFAULT '',
+    region_city            TEXT    NOT NULL DEFAULT '',
+    refresh_ahead_seconds  INTEGER NOT NULL DEFAULT 300,
+    created_at             INTEGER NOT NULL,
+    updated_at             INTEGER NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS app_settings (
@@ -188,6 +203,10 @@ func Open(path string) (*DB, error) {
 		_ = db.Close()
 		return nil, err
 	}
+	if err = migrateAccountProxySettings(ctx, db); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 	out := &DB{sql: db}
 	if err = out.EnsureDefaultFeatures(ctx); err != nil {
 		_ = db.Close()
@@ -274,6 +293,52 @@ func migrateAccountRemark(ctx context.Context, db *sql.DB) error {
 	}
 	_, err = db.ExecContext(ctx, "ALTER TABLE wechat_accounts ADD COLUMN remark TEXT")
 	return err
+}
+
+func migrateAccountProxySettings(ctx context.Context, db *sql.DB) error {
+	columns := []struct {
+		name       string
+		definition string
+	}{
+		{"provider_profile_id", "INTEGER"},
+		{"region_code", "TEXT NOT NULL DEFAULT ''"},
+		{"region_province", "TEXT NOT NULL DEFAULT ''"},
+		{"region_city", "TEXT NOT NULL DEFAULT ''"},
+		{"refresh_ahead_seconds", "INTEGER NOT NULL DEFAULT 300"},
+	}
+	for _, column := range columns {
+		exists, err := sqliteColumnExists(ctx, db, "account_proxy_settings", column.name)
+		if err != nil {
+			return err
+		}
+		if exists {
+			continue
+		}
+		if _, err = db.ExecContext(ctx, "ALTER TABLE account_proxy_settings ADD COLUMN "+column.name+" "+column.definition); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func sqliteColumnExists(ctx context.Context, db *sql.DB, table, wanted string) (bool, error) {
+	rows, err := db.QueryContext(ctx, "PRAGMA table_info("+table+")")
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid, notNull, primaryKey int
+		var name, columnType string
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			return false, err
+		}
+		if name == wanted {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
 }
 
 func (db *DB) UpsertAccount(ctx context.Context, openid, loginBuffer string, alias, nickname, avatar *string, userInfo map[string]any, credentials map[string]any, status *string) (*WechatAccount, error) {

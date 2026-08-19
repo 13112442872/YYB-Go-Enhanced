@@ -14,17 +14,23 @@ import (
 )
 
 type accountProxyIn struct {
-	Ref         string `json:"ref"`
-	Mode        string `json:"mode"`
-	ProxyType   string `json:"proxy_type"`
-	StaticProxy string `json:"static_proxy"`
-	APIURL      string `json:"api_url"`
+	Ref                 string `json:"ref"`
+	Mode                string `json:"mode"`
+	ProxyType           string `json:"proxy_type"`
+	StaticProxy         string `json:"static_proxy"`
+	APIURL              string `json:"api_url"`
+	ProviderProfileID   *int64 `json:"provider_profile_id"`
+	RegionCode          string `json:"region_code"`
+	RegionProvince      string `json:"region_province"`
+	RegionCity          string `json:"region_city"`
+	RefreshAheadMinutes int64  `json:"refresh_ahead_minutes"`
 }
 
 type qrLoginSession struct {
 	Session   *qr.Session
 	Client    *qr.Client
 	ProxySpec proxysource.Spec
+	ProxyIn   accountProxyIn
 }
 
 func (body accountProxyIn) spec() proxysource.Spec {
@@ -45,7 +51,10 @@ func proxySettingPublic(setting *store.AccountProxySetting) map[string]any {
 	return map[string]any{
 		"account_id": setting.AccountID, "mode": setting.Mode, "proxy_type": setting.ProxyType,
 		"static_proxy": setting.StaticProxy, "api_url": setting.APIURL,
-		"configured": setting.Mode != "direct", "updated_at": setting.UpdatedAt,
+		"provider_profile_id": setting.ProviderProfileID,
+		"region_code":         setting.RegionCode, "region_province": setting.RegionProvince, "region_city": setting.RegionCity,
+		"refresh_ahead_minutes": setting.RefreshAheadSeconds / 60,
+		"configured":            setting.Mode != "direct", "updated_at": setting.UpdatedAt,
 	}
 }
 
@@ -72,12 +81,12 @@ func (a *App) handleAccountProxy(w http.ResponseWriter, r *http.Request) {
 		if !ok {
 			return
 		}
-		normalized, err := proxysource.NormalizeSpec(body.spec())
+		normalizedBody, normalized, err := a.normalizeAccountProxyInput(r.Context(), body)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		setting, err := a.db.UpsertAccountProxySetting(r.Context(), acc.ID, normalized.Mode, normalized.ProxyType, normalized.StaticProxy, normalized.APIURL)
+		setting, err := a.saveAccountProxyInput(r.Context(), acc.ID, normalizedBody, normalized)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
@@ -102,7 +111,11 @@ func (a *App) handleAccountProxyTest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
 		return
 	}
-	spec := body.spec()
+	_, spec, err := a.normalizeAccountProxyInput(r.Context(), body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	if strings.TrimSpace(body.Ref) != "" && strings.TrimSpace(body.Mode) == "" {
 		acc, ok := a.resolveAccountRef(w, r, body.Ref)
 		if !ok {
@@ -113,7 +126,11 @@ func (a *App) handleAccountProxyTest(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		spec = proxySpecFromSetting(setting)
+		spec, err = a.proxySpecForSetting(r.Context(), setting)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 	}
 	resolved, err := a.resolveProxySpec(r.Context(), spec)
 	if err != nil {
@@ -145,7 +162,11 @@ func (a *App) resolveAccountProxy(ctx context.Context, accountID int64) (string,
 	if err != nil {
 		return "", false, err
 	}
-	proxyValue, err := a.resolveProxySpec(ctx, proxySpecFromSetting(setting))
+	spec, err := a.proxySpecForSetting(ctx, setting)
+	if err != nil {
+		return "", false, err
+	}
+	proxyValue, err := a.resolveProxySpec(ctx, spec)
 	return proxyValue, false, err
 }
 
@@ -164,11 +185,30 @@ func (a *App) qrClientForSpec(ctx context.Context, spec proxysource.Spec) (*qr.C
 	return client, resolved, nil
 }
 
-func (a *App) saveAccountProxySpec(ctx context.Context, accountID int64, spec proxysource.Spec) error {
-	normalized, err := proxysource.NormalizeSpec(spec)
-	if err != nil {
-		return err
+func (a *App) saveAccountProxyInput(ctx context.Context, accountID int64, body accountProxyIn, normalized proxysource.Spec) (*store.AccountProxySetting, error) {
+	refreshAheadSeconds := body.RefreshAheadMinutes * 60
+	apiURL := normalized.APIURL
+	if body.ProviderProfileID != nil {
+		apiURL = ""
 	}
-	_, err = a.db.UpsertAccountProxySetting(ctx, accountID, normalized.Mode, normalized.ProxyType, normalized.StaticProxy, normalized.APIURL)
+	return a.db.UpsertAccountProxySetting(ctx, accountID, normalized.Mode, normalized.ProxyType,
+		normalized.StaticProxy, apiURL, body.ProviderProfileID,
+		strings.TrimSpace(body.RegionCode), strings.TrimSpace(body.RegionProvince), strings.TrimSpace(body.RegionCity),
+		refreshAheadSeconds)
+}
+
+func (a *App) accountExistsBeforeScan(ctx context.Context, openID string) (bool, error) {
+	_, err := a.db.GetAccountByOpenID(ctx, openID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+func (a *App) saveNewAccountProxy(ctx context.Context, accountID int64, existed bool, body accountProxyIn, normalized proxysource.Spec) error {
+	if existed {
+		return nil
+	}
+	_, err := a.saveAccountProxyInput(ctx, accountID, body, normalized)
 	return err
 }

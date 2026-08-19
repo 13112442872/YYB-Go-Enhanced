@@ -60,6 +60,26 @@ func TestRefreshAccountSkipsFreshCredentials(t *testing.T) {
 	}
 }
 
+func TestProxyAccountRefreshAheadIsIndependent(t *testing.T) {
+	app := newKeepAliveTestApp(t)
+	defer app.Close()
+	acc := insertKeepAliveTestAccount(t, app, "openid-proxy-ahead", time.Now().Add(2*time.Hour))
+	if _, err := app.db.UpsertAccountProxySetting(context.Background(), acc.ID, "api", "http", "", "https://proxy.example/get", nil, "", "", "", 300); err != nil {
+		t.Fatalf("UpsertAccountProxySetting() error = %v", err)
+	}
+	ahead, err := app.accountRefreshAhead(context.Background(), acc.ID)
+	if err != nil || ahead != 5*time.Minute {
+		t.Fatalf("default proxy refresh ahead = %v, %v", ahead, err)
+	}
+	if _, err := app.db.UpsertAccountProxySetting(context.Background(), acc.ID, "api", "http", "", "https://proxy.example/get", nil, "", "", "", 2700); err != nil {
+		t.Fatalf("UpsertAccountProxySetting(custom) error = %v", err)
+	}
+	ahead, err = app.accountRefreshAhead(context.Background(), acc.ID)
+	if err != nil || ahead != 45*time.Minute {
+		t.Fatalf("custom proxy refresh ahead = %v, %v", ahead, err)
+	}
+}
+
 func TestRefreshAccountRetriesAfterFailure(t *testing.T) {
 	app := newKeepAliveTestApp(t)
 	defer app.Close()

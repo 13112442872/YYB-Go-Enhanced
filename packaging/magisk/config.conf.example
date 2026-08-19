@@ -3,7 +3,7 @@
 
 HOST=127.0.0.1
 PORT=8000
-KEEPALIVE_INTERVAL=30m
+KEEPALIVE_INTERVAL=1m
 KEEPALIVE_AHEAD=45m
 TCP_PROXY=
 # TCP_PROXY is only the legacy default for accounts without a saved proxy.

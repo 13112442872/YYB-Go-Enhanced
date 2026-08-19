@@ -21,6 +21,7 @@ var desktopWechatPorts = []int{14013, 14014, 14015, 13013, 13014, 13015}
 type quickLoginSession struct {
 	CreatedAt time.Time
 	ProxySpec proxysource.Spec
+	ProxyIn   accountProxyIn
 }
 
 func (a *App) handleQuickLoginRoot(w http.ResponseWriter, r *http.Request) {
@@ -39,7 +40,7 @@ func (a *App) handleQuickLoginRoot(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
 		return
 	}
-	proxySpec, err := proxysource.NormalizeSpec(proxyBody.spec())
+	normalizedBody, proxySpec, err := a.normalizeAccountProxyInput(r.Context(), proxyBody)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -50,7 +51,7 @@ func (a *App) handleQuickLoginRoot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.mu.Lock()
-	a.quickSessions[sessionID] = quickLoginSession{CreatedAt: time.Now(), ProxySpec: proxySpec}
+	a.quickSessions[sessionID] = quickLoginSession{CreatedAt: time.Now(), ProxySpec: proxySpec, ProxyIn: normalizedBody}
 	a.mu.Unlock()
 
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -121,12 +122,17 @@ func (a *App) handleQuickLogin(w http.ResponseWriter, r *http.Request) {
 	} else if ui, err := client.LoginBuffers().FetchUserInfo(r.Context(), result.Credentials); err == nil {
 		userInfo = ui
 	}
+	existed, err := a.accountExistsBeforeScan(r.Context(), result.Credentials.OpenID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	account, err := a.storeFromScan(r.Context(), result.LoginBuffer, result.Credentials, userInfo)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if err := a.saveAccountProxySpec(r.Context(), account.ID, session.ProxySpec); err != nil {
+	if err := a.saveNewAccountProxy(r.Context(), account.ID, existed, session.ProxyIn, session.ProxySpec); err != nil {
 		writeError(w, http.StatusInternalServerError, "保存账号代理失败: "+err.Error())
 		return
 	}

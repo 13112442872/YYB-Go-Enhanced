@@ -272,6 +272,8 @@ func (a *App) Handler() http.Handler {
 	router.Any("/accounts/remark", gin.WrapF(a.handleAccountRemark))
 	router.Any("/accounts/proxy", gin.WrapF(a.handleAccountProxy))
 	router.Any("/accounts/proxy/test", gin.WrapF(a.handleAccountProxyTest))
+	router.Any("/api/proxy-profiles", gin.WrapF(a.handleProxyProfiles))
+	router.Any("/api/proxy-profiles/*path", gin.WrapF(a.handleProxyProfiles))
 	router.Any("/api/qinglong/status", gin.WrapF(a.handleQingLongStatus))
 	router.Any("/api/qinglong/config", gin.WrapF(a.handleQingLongConfig))
 	router.Any("/api/qinglong/sync", gin.WrapF(a.handleQingLongSync))
@@ -356,7 +358,12 @@ func (a *App) handleQRRoot(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), a.cfg.RequestTimeout+35*time.Second)
 	defer cancel()
-	client, resolvedProxy, err := a.qrClientForSpec(ctx, body.spec())
+	normalizedBody, proxySpec, err := a.normalizeAccountProxyInput(ctx, body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	client, resolvedProxy, err := a.qrClientForSpec(ctx, proxySpec)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
@@ -367,7 +374,7 @@ func (a *App) handleQRRoot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.mu.Lock()
-	a.qrSessions[img.Session.ID] = &qrLoginSession{Session: img.Session, Client: client, ProxySpec: body.spec()}
+	a.qrSessions[img.Session.ID] = &qrLoginSession{Session: img.Session, Client: client, ProxySpec: proxySpec, ProxyIn: normalizedBody}
 	keep := make(map[string]bool, len(a.qrSessions))
 	for sid := range a.qrSessions {
 		keep[sid] = true
@@ -456,12 +463,17 @@ func (a *App) handleQR(w http.ResponseWriter, r *http.Request) {
 		if ui, err := login.Client.LoginBuffers().FetchUserInfo(r.Context(), result.Credentials); err == nil {
 			userInfo = ui
 		}
+		existed, err := a.accountExistsBeforeScan(r.Context(), result.Credentials.OpenID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
 		acc, err := a.storeFromScan(r.Context(), result.LoginBuffer, result.Credentials, userInfo)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		if err := a.saveAccountProxySpec(r.Context(), acc.ID, login.ProxySpec); err != nil {
+		if err := a.saveNewAccountProxy(r.Context(), acc.ID, existed, login.ProxyIn, login.ProxySpec); err != nil {
 			writeError(w, http.StatusInternalServerError, "保存账号代理失败: "+err.Error())
 			return
 		}
@@ -726,6 +738,10 @@ func (a *App) handleWXGetUserInfo(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "account has no login credentials")
 		return
 	}
+	if accountStatus(acc) == "expired" {
+		writeError(w, http.StatusConflict, "account login_buffer expired; re-scan required")
+		return
+	}
 	proxyValue, fallbackDirect, err := a.resolveAccountProxy(r.Context(), acc.ID)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "resolve account proxy failed: "+err.Error())
@@ -914,6 +930,9 @@ type accountExpiredError struct{ openid string }
 func (e accountExpiredError) Error() string { return "account expired: " + e.openid }
 
 func (a *App) invokeWXApp(ctx context.Context, acc *store.WechatAccount, appID string, payload map[string]any, call wxappCall) (map[string]any, error) {
+	if accountStatus(acc) == "expired" {
+		return nil, accountExpiredError{openid: acc.OpenID}
+	}
 	proxyValue, fallbackDirect, err := a.resolveAccountProxy(ctx, acc.ID)
 	if err != nil {
 		return nil, fmt.Errorf("resolve account proxy: %w", err)

@@ -51,6 +51,9 @@ func (a *App) refreshDueAccounts(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
+		if accountStatus(acc) == "expired" {
+			continue
+		}
 		_, refreshed, err := a.refreshAccount(ctx, acc, false)
 		if err != nil {
 			if ctx.Err() == nil {
@@ -95,6 +98,9 @@ func (a *App) refreshAccountWithPolicy(ctx context.Context, acc *store.WechatAcc
 	if err != nil {
 		return "unknown", false, err
 	}
+	if accountStatus(latest) == "expired" {
+		return "expired", false, nil
+	}
 	if latest.Credentials == nil {
 		err = fmt.Errorf("credentials are missing")
 		if setErr := a.db.SetAccountStatus(ctx, latest.ID, "unknown"); setErr != nil {
@@ -104,7 +110,11 @@ func (a *App) refreshAccountWithPolicy(ctx context.Context, acc *store.WechatAcc
 	}
 
 	creds := protocol.CredentialsFromMap(latest.Credentials)
-	if !force && !credentialsDueForRefresh(creds, time.Now(), a.cfg.KeepAliveAhead) {
+	refreshAhead, err := a.accountRefreshAhead(ctx, latest.ID)
+	if err != nil {
+		return accountStatus(latest), false, err
+	}
+	if !force && !credentialsDueForRefresh(creds, time.Now(), refreshAhead) {
 		return accountStatus(latest), false, nil
 	}
 
@@ -129,6 +139,17 @@ func (a *App) refreshAccountWithPolicy(ctx context.Context, acc *store.WechatAcc
 		return "expired", false, err
 	}
 	return "alive", true, nil
+}
+
+func (a *App) accountRefreshAhead(ctx context.Context, accountID int64) (time.Duration, error) {
+	setting, err := a.db.AccountProxySettingOrDefault(ctx, accountID)
+	if err != nil {
+		return 0, fmt.Errorf("read account proxy setting: %w", err)
+	}
+	if setting.Mode == "direct" {
+		return a.cfg.KeepAliveAhead, nil
+	}
+	return time.Duration(setting.RefreshAheadSeconds) * time.Second, nil
 }
 
 func (a *App) refreshLoginBufferWithProxy(ctx context.Context, creds protocol.LoginBufferCredentials, proxyValue string, fallbackDirect bool) (protocol.LoginBufferResult, error) {

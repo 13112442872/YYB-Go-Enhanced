@@ -931,6 +931,7 @@
         { name: "appmsglike", label: "/wx/appmsglike 文章点赞", route: "/wx/appmsglike", requiresAppID: true, needsPayload: true },
         { name: "oauth", label: "/wx/oauth 公众号授权", route: "/wx/oauth", requiresAppID: true }
       ],
+	  proxyConfigs: new Map(),
       selectedOpenID: "",
       lastResult: ""
     };
@@ -991,6 +992,13 @@
       if (status === "alive") return "alive";
       if (status === "expired") return "expired";
       return "unknown";
+    }
+
+    function proxyText(config) {
+      if (!config || !config.configured) return "直连";
+      if (config.provider_profile_id) return `品赞代理${config.region_city ? ` · ${config.region_city}` : config.region_province ? ` · ${config.region_province}` : " · 全国"}`;
+      if (config.mode === "static") return "静态代理";
+      return "动态代理 API";
     }
 
     function formatChecked(ts) {
@@ -1057,6 +1065,7 @@
       strip.innerHTML = "";
       for (const account of state.accounts) {
         const name = accountName(account);
+		const proxy = proxyText(state.proxyConfigs.get(String(account.id)));
         const cls = account.rescan_recommended ? "warning" : statusClass(account.status);
         const status = account.rescan_recommended ? "建议重扫" : statusText(account.status);
         const button = document.createElement("button");
@@ -1075,7 +1084,7 @@
               <span class="account-name">${escapeHTML(name)}</span>
               <span class="account-status ${cls}" title="${account.rescan_recommended ? "RefreshToken 已使用约 25 天，建议在失效前重新扫码" : ""}"><span class="status-dot"></span>${status}</span>
             </span>
-            <span class="account-meta" title="ID: ${escapeHTML(account.id)} · UIN: ${escapeHTML(account.uin ?? "-")} · ${formatChecked(account.last_checked_at)}">ID: ${escapeHTML(account.id)} · UIN: ${escapeHTML(account.uin ?? "-")} · ${formatChecked(account.last_checked_at)}</span>
+			<span class="account-meta" title="ID: ${escapeHTML(account.id)} · UIN: ${escapeHTML(account.uin ?? "-")} · ${escapeHTML(proxy)} · ${formatChecked(account.last_checked_at)}">ID: ${escapeHTML(account.id)} · ${escapeHTML(proxy)} · ${formatChecked(account.last_checked_at)}</span>
             <span class="account-openid" title="OpenID: ${escapeHTML(account.openid)}">OpenID: ${escapeHTML(account.openid)}</span>
           </span>
         `;
@@ -1107,10 +1116,9 @@
       try {
         const config = await api("GET", `/accounts/proxy?ref=${encodeURIComponent(account.id)}`);
         if (state.selectedOpenID !== openid) return;
-        const labels = { direct: "直连", static: "静态代理", api: "动态代理 API" };
-        $("accountProxyStatus").textContent = config.configured
-          ? `${labels[config.mode] || "账号代理"} · ${config.proxy_type === "socks5" ? "SOCKS5" : "HTTP CONNECT"}`
-          : "当前账号使用直连";
+		state.proxyConfigs.set(String(account.id), config);
+		const prefix = account.status === "expired" ? "账号需重扫，配置已保留 · " : "";
+		$("accountProxyStatus").textContent = `${prefix}${proxyText(config)}${config.configured ? ` · ${config.proxy_type === "socks5" ? "SOCKS5" : "HTTP CONNECT"}` : ""}`;
       } catch (error) {
         if (state.selectedOpenID === openid) $("accountProxyStatus").textContent = `读取失败：${error.message}`;
       }
@@ -1172,6 +1180,10 @@
       $("accountStrip").innerHTML = `<div class="empty-state">账号加载中</div>`;
       try {
         state.accounts = await api("GET", "/accounts");
+		state.proxyConfigs.clear();
+		await Promise.all(state.accounts.map(async account => {
+		  try { state.proxyConfigs.set(String(account.id), await api("GET", `/accounts/proxy?ref=${encodeURIComponent(account.id)}`)); } catch { /* Selected account reports details. */ }
+		}));
         const requestedRef = new URLSearchParams(location.search).get("ref");
         const requestedAccount = requestedRef
           ? state.accounts.find(account => String(account.id) === requestedRef || account.openid === requestedRef)

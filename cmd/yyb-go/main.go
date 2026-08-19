@@ -22,7 +22,7 @@ func main() {
 	resourceRoot := flag.String("resource-root", filepath.Join(".", "resource"), "runtime resource directory")
 	dbFilename := flag.String("db", httpapi.DefaultDBFilename, "SQLite database filename under resource/db")
 	tcpProxy := flag.String("tcp-proxy", "", "optional TCP proxy: socks5://host:port or http-connect://host:port")
-	keepAliveInterval := flag.Duration("keepalive-interval", 30*time.Minute, "account keepalive check interval; 0 disables")
+	keepAliveInterval := flag.Duration("keepalive-interval", time.Minute, "account keepalive check interval; 0 disables")
 	keepAliveAhead := flag.Duration("keepalive-ahead", 45*time.Minute, "refresh credentials this long before expiry")
 	flag.Parse()
 	if dnsServers, err := configureDNS(os.Getenv("YYB_DNS_SERVERS")); err != nil {
