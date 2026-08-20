@@ -155,10 +155,18 @@ func definitiveCredentialFailure(err error) bool {
 		return true
 	}
 	var rejected *protocol.RefreshRejectedError
-	if !errors.As(err, &rejected) {
-		return false
+	if errors.As(err, &rejected) {
+		return definitiveRefreshMessage(rejected.Message)
 	}
-	message := strings.ToLower(strings.TrimSpace(rejected.Message))
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "42007") && strings.Contains(message, "refresh_token")
+}
+
+func definitiveRefreshMessage(raw string) bool {
+	message := strings.ToLower(strings.TrimSpace(raw))
+	if strings.Contains(message, "42007") && strings.Contains(message, "refresh_token") {
+		return true
+	}
 	invalid := strings.Contains(message, "invalid") || strings.Contains(message, "expired") ||
 		strings.Contains(message, "expire") || strings.Contains(message, "无效") ||
 		strings.Contains(message, "过期") || strings.Contains(message, "失效")

@@ -518,10 +518,11 @@ func newOpenAPISpec() map[string]any {
 					"updated_at":            int64Schema(),
 				}),
 				"ProxyProviderProfileRequest": objectSchema([]string{"name", "api_url"}, map[string]any{
-					"name":       map[string]any{"type": "string", "maxLength": 50, "example": "品赞代理 1"},
-					"provider":   map[string]any{"type": "string", "enum": []string{"ipzan"}, "default": "ipzan"},
-					"proxy_type": map[string]any{"type": "string", "enum": []string{"http", "socks5"}, "default": "http"},
-					"api_url":    map[string]any{"type": "string", "format": "uri", "description": "必须为包含 no 和 secret 的品赞 core-extract HTTPS 链接。"},
+					"name":               map[string]any{"type": "string", "maxLength": 50, "example": "品赞代理 1"},
+					"provider":           map[string]any{"type": "string", "enum": []string{"ipzan"}, "default": "ipzan"},
+					"proxy_type":         map[string]any{"type": "string", "enum": []string{"http", "socks5"}, "default": "http"},
+					"authorization_mode": map[string]any{"type": "string", "enum": []string{"auth", "whitelist"}, "default": "auth", "description": "auth 使用提取结果中的临时账号密码；whitelist 依赖服务器出口 IP 白名单。"},
+					"api_url":            map[string]any{"type": "string", "format": "uri", "description": "必须为包含 no 和 secret 的品赞 core-extract HTTPS 链接。"},
 				}),
 				"ProxyProviderProfile": objectSchema([]string{"id", "name", "provider", "proxy_type", "api_url"}, map[string]any{
 					"id":         int64Schema(),

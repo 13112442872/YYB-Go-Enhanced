@@ -4,6 +4,8 @@
 
 ## 2026-08-20
 
+- 品赞配置库增加账号密码授权选项，自动使用 JSON 提取结果中的临时账号密码，避免飞牛公网 IP 变化导致白名单失效；兼容品赞官方 TXT 空格分隔账密格式。
+- 腾讯刷新接口返回 `42007 access_token and refresh_token exception` 时明确标记账号失效并停止后台重试，界面不再长期显示“待确认”。
 - 增加 Arcadia 面板驱动，支持通过 OpenAPI Token 管理 `YYB_SERVER`、账号独立任务、启停、立即运行和删除。
 - 识别 Arcadia 的 `arcadia run 仓库/脚本` 命令；YYB 托管任务将日志写入 `/arcadia/log/yyb_account_*` 并通过 File OpenAPI 回读，不改写已有 Arcadia 任务。
 - Web 面板设置增加 Arcadia 类型与 Token 专用交互，Compose 支持 `ARCADIA_URL`、`ARCADIA_TOKEN`，并补充权限和部署说明。

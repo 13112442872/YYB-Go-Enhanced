@@ -180,6 +180,13 @@ func TestDefinitiveRefreshRejectionExpiresAccount(t *testing.T) {
 	}
 }
 
+func TestTencent42007ExpiresAccount(t *testing.T) {
+	err := errors.New("refresh failed: code=-109 msg=WXRefresh go error, code: 42007, msg access_token and refresh_token exception")
+	if !definitiveCredentialFailure(err) {
+		t.Fatal("42007 refresh token rejection should require a rescan")
+	}
+}
+
 func TestRefreshOutDistinguishesRetryFromRescan(t *testing.T) {
 	acc := &store.WechatAccount{ID: 7, OpenID: "openid-refresh-output"}
 	retry := refreshOut(acc, "unknown", errors.New("proxy timeout"))

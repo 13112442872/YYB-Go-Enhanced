@@ -18,7 +18,9 @@ func TestParseResponseFormats(t *testing.T) {
 		{"txt-auth", "user:pass@203.0.113.11:1080", Endpoint{Host: "203.0.113.11", Port: 1080, Username: "user", Password: "pass"}},
 		{"txt-auth-four-columns", "203.0.113.15:1080:user:pass", Endpoint{Host: "203.0.113.15", Port: 1080, Username: "user", Password: "pass"}},
 		{"txt-auth-pipes", "203.0.113.16:1080|user|pass", Endpoint{Host: "203.0.113.16", Port: 1080, Username: "user", Password: "pass"}},
+		{"ipzan-txt-auth", "203.0.113.17:1080 ipzan-user ipzan-pass\r\n", Endpoint{Host: "203.0.113.17", Port: 1080, Username: "ipzan-user", Password: "ipzan-pass"}},
 		{"json", `{"code":0,"data":[{"ip":"203.0.113.12","port":9000}]}`, Endpoint{Host: "203.0.113.12", Port: 9000}},
+		{"ipzan-json-auth", `{"data":{"list":[{"ip":"203.0.113.18","port":40006,"expired":1726210338000,"account":"ipzan-account","password":"ipzan-password"}]},"code":0,"message":"","status":200}`, Endpoint{Host: "203.0.113.18", Port: 40006, Username: "ipzan-account", Password: "ipzan-password"}},
 		{"json2", `{"success":true,"data":{"proxy_list":[{"host":"203.0.113.13","proxy_port":"9001","username":"u","password":"p"}]}}`, Endpoint{Host: "203.0.113.13", Port: 9001, Username: "u", Password: "p"}},
 		{"nested-string", `{"result":{"proxy":"203.0.113.14:9002"}}`, Endpoint{Host: "203.0.113.14", Port: 9002}},
 	}
@@ -32,6 +34,13 @@ func TestParseResponseFormats(t *testing.T) {
 				t.Fatalf("ParseResponse() = %#v, want %#v", got, test.want)
 			}
 		})
+	}
+}
+
+func TestParseResponseReportsProviderMessage(t *testing.T) {
+	_, err := ParseResponse([]byte(`{"code":-1,"message":"当前IP不在白名单"}`))
+	if err == nil || !strings.Contains(err.Error(), "当前IP不在白名单") {
+		t.Fatalf("ParseResponse() error = %v", err)
 	}
 }
 

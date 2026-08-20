@@ -19,10 +19,11 @@ import (
 const ipzanHost = "service.ipzan.com"
 
 type proxyProfileIn struct {
-	Name      string `json:"name"`
-	Provider  string `json:"provider"`
-	ProxyType string `json:"proxy_type"`
-	APIURL    string `json:"api_url"`
+	Name              string `json:"name"`
+	Provider          string `json:"provider"`
+	ProxyType         string `json:"proxy_type"`
+	APIURL            string `json:"api_url"`
+	AuthorizationMode string `json:"authorization_mode"`
 }
 
 type proxyArea struct {
@@ -135,6 +136,7 @@ func decodeProxyProfile(w http.ResponseWriter, r *http.Request) (proxyProfileIn,
 	body.Name = strings.TrimSpace(body.Name)
 	body.Provider = strings.ToLower(strings.TrimSpace(body.Provider))
 	body.ProxyType = strings.ToLower(strings.TrimSpace(body.ProxyType))
+	body.AuthorizationMode = strings.ToLower(strings.TrimSpace(body.AuthorizationMode))
 	if body.Provider == "" {
 		body.Provider = "ipzan"
 	}
@@ -149,7 +151,7 @@ func decodeProxyProfile(w http.ResponseWriter, r *http.Request) (proxyProfileIn,
 		writeError(w, http.StatusBadRequest, "目前配置库仅支持品赞代理")
 		return proxyProfileIn{}, false
 	}
-	apiURL, err := normalizeIPZanURL(body.APIURL, body.ProxyType)
+	apiURL, err := normalizeIPZanURL(body.APIURL, body.ProxyType, body.AuthorizationMode)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return proxyProfileIn{}, false
@@ -158,7 +160,7 @@ func decodeProxyProfile(w http.ResponseWriter, r *http.Request) (proxyProfileIn,
 	return body, true
 }
 
-func normalizeIPZanURL(raw, proxyType string) (string, error) {
+func normalizeIPZanURL(raw, proxyType, authorizationMode string) (string, error) {
 	if proxyType != "http" && proxyType != "socks5" {
 		return "", fmt.Errorf("代理类型必须为 http 或 socks5")
 	}
@@ -172,6 +174,22 @@ func normalizeIPZanURL(raw, proxyType string) (string, error) {
 	}
 	query.Del("area")
 	query.Set("num", "1")
+	if authorizationMode == "" {
+		if strings.EqualFold(strings.TrimSpace(query.Get("mode")), "auth") {
+			authorizationMode = "auth"
+		} else {
+			authorizationMode = "whitelist"
+		}
+	}
+	switch authorizationMode {
+	case "auth":
+		query.Set("mode", "auth")
+		query.Set("format", "json")
+	case "whitelist":
+		query.Del("mode")
+	default:
+		return "", fmt.Errorf("品赞授权方式必须为 whitelist 或 auth")
+	}
 	if strings.TrimSpace(query.Get("format")) == "" {
 		query.Set("format", "json")
 	}
@@ -186,7 +204,7 @@ func normalizeIPZanURL(raw, proxyType string) (string, error) {
 }
 
 func ipzanURLForRegion(profile *store.ProxyProviderProfile, regionCode string) (string, error) {
-	base, err := normalizeIPZanURL(profile.APIURL, profile.ProxyType)
+	base, err := normalizeIPZanURL(profile.APIURL, profile.ProxyType, "")
 	if err != nil {
 		return "", err
 	}

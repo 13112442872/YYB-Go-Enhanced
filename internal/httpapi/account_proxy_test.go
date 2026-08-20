@@ -124,7 +124,8 @@ func TestIPZanProfilesCanBeNamedAndBoundByRegion(t *testing.T) {
 	handler := app.Handler()
 	created := apiRequest(t, handler, http.MethodPost, "/api/proxy-profiles", map[string]any{
 		"name": "品赞代理 1", "provider": "ipzan", "proxy_type": "http",
-		"api_url": "https://service.ipzan.com/core-extract?no=123&secret=test&format=json&area=110000",
+		"authorization_mode": "auth",
+		"api_url":            "https://service.ipzan.com/core-extract?no=123&secret=test&format=txt&area=110000",
 	})
 	if created.Code != http.StatusCreated {
 		t.Fatalf("POST /api/proxy-profiles status = %d body=%s", created.Code, created.Body.String())
@@ -151,7 +152,7 @@ func TestIPZanProfilesCanBeNamedAndBoundByRegion(t *testing.T) {
 		t.Fatalf("saved profile setting = %#v, %v", setting, err)
 	}
 	spec, err := app.proxySpecForSetting(context.Background(), setting)
-	if err != nil || !strings.Contains(spec.APIURL, "area=370100") || !strings.Contains(spec.APIURL, "protocol=1") || strings.Contains(spec.APIURL, "area=110000") {
+	if err != nil || !strings.Contains(spec.APIURL, "area=370100") || !strings.Contains(spec.APIURL, "protocol=1") || !strings.Contains(spec.APIURL, "mode=auth") || !strings.Contains(spec.APIURL, "format=json") || strings.Contains(spec.APIURL, "area=110000") {
 		t.Fatalf("resolved profile spec = %#v, %v", spec, err)
 	}
 	deleted := apiRequest(t, handler, http.MethodDelete, fmt.Sprintf("/api/proxy-profiles/%d", profileID), nil)

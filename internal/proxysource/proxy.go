@@ -119,15 +119,39 @@ func ParseResponse(body []byte) (Endpoint, error) {
 		if endpoint, ok := endpointFromJSON(value); ok {
 			return endpoint, nil
 		}
+		if message := responseMessage(value); message != "" {
+			return Endpoint{}, fmt.Errorf("代理 API 返回错误: %s", message)
+		}
 	}
 	for _, line := range strings.FieldsFunc(text, func(r rune) bool {
-		return r == '\n' || r == '\r' || r == '\t' || r == ',' || r == ';'
+		return r == '\n' || r == '\r' || r == ',' || r == ';'
 	}) {
+		fields := strings.Fields(line)
+		if len(fields) >= 3 {
+			if endpoint, err := ParseEndpoint(fields[0]); err == nil {
+				endpoint.Username = fields[1]
+				endpoint.Password = fields[2]
+				return endpoint, nil
+			}
+		}
 		if endpoint, err := ParseEndpoint(line); err == nil {
 			return endpoint, nil
 		}
 	}
 	return Endpoint{}, fmt.Errorf("无法从代理 API 响应解析 IP 和端口，支持 txt、json、json2")
+}
+
+func responseMessage(value any) string {
+	values, ok := value.(map[string]any)
+	if !ok {
+		return ""
+	}
+	for _, key := range []string{"message", "msg", "error"} {
+		if message, exists := stringValue(values, key); exists && message != "" {
+			return message
+		}
+	}
+	return ""
 }
 
 func ParseEndpoint(raw string) (Endpoint, error) {
