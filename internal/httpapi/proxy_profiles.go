@@ -294,12 +294,11 @@ func juliangURLForRegion(profile *store.ProxyProviderProfile, province, city str
 	} else {
 		params["auth_type"] = "2"
 	}
-	area := normalizeRegionName(city)
-	if area == "" {
-		area = normalizeRegionName(province)
+	if province = normalizeRegionName(province); province != "" {
+		params["province"] = province
 	}
-	if area != "" {
-		params["area"] = area
+	if city = normalizeRegionName(city); city != "" {
+		params["city"] = city
 	}
 	params["sign"] = juliangSign(params, profileQuery.Get("key"))
 	endpoint, _ := url.Parse(juliangAPIEndpoint)
