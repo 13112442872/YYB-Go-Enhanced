@@ -187,6 +187,13 @@ func TestTencent42007ExpiresAccount(t *testing.T) {
 	}
 }
 
+func TestTencent40188ExpiresAccount(t *testing.T) {
+	err := errors.New("login_buffer failed: code=-101 msg=GetLoginBuffer error [40188] [invalid scope]")
+	if !definitiveCredentialFailure(err) {
+		t.Fatal("40188 invalid scope should require a rescan")
+	}
+}
+
 func TestRefreshOutDistinguishesRetryFromRescan(t *testing.T) {
 	acc := &store.WechatAccount{ID: 7, OpenID: "openid-refresh-output"}
 	retry := refreshOut(acc, "unknown", errors.New("proxy timeout"))

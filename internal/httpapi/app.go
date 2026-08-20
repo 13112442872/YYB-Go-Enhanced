@@ -69,6 +69,8 @@ type App struct {
 	refreshMu     sync.Mutex
 	loginMu       sync.Mutex
 	loginAttempts map[string]loginAttempt
+	proxyMu       sync.Mutex
+	proxyLeases   map[int64]accountProxyLease
 
 	keepAliveCancel context.CancelFunc
 	keepAliveDone   chan struct{}
@@ -156,6 +158,7 @@ func NewApp(cfg Config) (*App, error) {
 		qrSessions:         map[string]*qrLoginSession{},
 		quickSessions:      map[string]quickLoginSession{},
 		loginAttempts:      map[string]loginAttempt{},
+		proxyLeases:        map[int64]accountProxyLease{},
 	}
 	authDriver := strings.ToLower(strings.TrimSpace(cfg.AuthDriver))
 	authDSN := strings.TrimSpace(cfg.AuthDSN)
@@ -941,13 +944,11 @@ func (a *App) invokeWXApp(ctx context.Context, acc *store.WechatAccount, appID s
 	if err != nil {
 		return nil, fmt.Errorf("resolve account proxy: %w", err)
 	}
-	if _, err := a.db.GetSession(ctx, acc.ID, proxyValue); err == nil {
-		result, err := call(ctx, acc, appID, payload, proxyValue, fallbackDirect)
-		if err == nil {
-			return result, nil
-		}
-		_ = a.db.InvalidateSession(ctx, acc.ID, proxyValue)
+	result, callErr := call(ctx, acc, appID, payload, proxyValue, fallbackDirect)
+	if callErr == nil {
+		return result, nil
 	}
+	_ = a.db.InvalidateSession(ctx, acc.ID, proxyValue)
 	status, refreshErr := a.refreshLivenessWithProxy(ctx, acc, proxyValue, fallbackDirect)
 	if status != "alive" {
 		if status == "expired" {

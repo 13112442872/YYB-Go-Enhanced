@@ -997,7 +997,7 @@
 
     function proxyText(config) {
       if (!config || !config.configured) return "直连";
-      if (config.provider_profile_id) return `品赞代理${config.region_city ? ` · ${config.region_city}` : config.region_province ? ` · ${config.region_province}` : " · 全国"}`;
+      if (config.provider_profile_id) return `供应商代理${config.region_city ? ` · ${config.region_city}` : config.region_province ? ` · ${config.region_province}` : " · 全国"}`;
       if (config.mode === "static") return "静态代理";
       return "动态代理 API";
     }

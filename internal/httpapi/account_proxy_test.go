@@ -8,10 +8,12 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
 
+	"yyb_go/internal/protocol"
 	"yyb_go/internal/proxysource"
 	"yyb_go/internal/store"
 )
@@ -109,6 +111,45 @@ func TestAccountProxyAPIParsesJSON2AndCascades(t *testing.T) {
 	}
 }
 
+func TestDynamicProxyLeaseAvoidsRepeatedExtraction(t *testing.T) {
+	t.Setenv("GIN_MODE", "test")
+	proxyCalls := 0
+	proxyAPI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		proxyCalls++
+		_, _ = w.Write([]byte(`{"data":{"ip":"203.0.113.31","port":8080}}`))
+	}))
+	defer proxyAPI.Close()
+	app, err := NewApp(Config{ResourceRoot: t.TempDir(), RequestTimeout: time.Second})
+	if err != nil {
+		t.Fatalf("NewApp() error = %v", err)
+	}
+	defer app.Close()
+	status := "alive"
+	account, err := app.db.UpsertAccount(context.Background(), "lease-openid", "buffer", nil, nil, nil, nil, nil, &status)
+	if err != nil {
+		t.Fatalf("UpsertAccount() error = %v", err)
+	}
+	if _, err := app.db.UpsertAccountProxySetting(context.Background(), account.ID, "api", "http", "", proxyAPI.URL, nil, "", "", "", 300); err != nil {
+		t.Fatalf("UpsertAccountProxySetting() error = %v", err)
+	}
+	for range 2 {
+		proxyValue, _, err := app.resolveAccountProxy(context.Background(), account.ID)
+		if err != nil || proxyValue != "http-connect://203.0.113.31:8080" {
+			t.Fatalf("resolveAccountProxy() = %q, %v", proxyValue, err)
+		}
+	}
+	if proxyCalls != 1 {
+		t.Fatalf("proxy API calls = %d, want 1", proxyCalls)
+	}
+	app.invalidateProxyLease(account.ID)
+	if _, _, err := app.resolveAccountProxy(context.Background(), account.ID); err != nil {
+		t.Fatalf("resolve after invalidation: %v", err)
+	}
+	if proxyCalls != 2 {
+		t.Fatalf("proxy API calls after invalidation = %d, want 2", proxyCalls)
+	}
+}
+
 func TestIPZanProfilesCanBeNamedAndBoundByRegion(t *testing.T) {
 	t.Setenv("GIN_MODE", "test")
 	app, err := NewApp(Config{ResourceRoot: t.TempDir(), RequestTimeout: time.Second})
@@ -161,6 +202,63 @@ func TestIPZanProfilesCanBeNamedAndBoundByRegion(t *testing.T) {
 	}
 }
 
+func TestJuliangProfilesSignEachAccountRegion(t *testing.T) {
+	t.Setenv("GIN_MODE", "test")
+	app, err := NewApp(Config{ResourceRoot: t.TempDir(), RequestTimeout: time.Second})
+	if err != nil {
+		t.Fatalf("NewApp() error = %v", err)
+	}
+	defer app.Close()
+	status := "alive"
+	account, err := app.db.UpsertAccount(context.Background(), "juliang-openid", "buffer", nil, nil, nil, nil, nil, &status)
+	if err != nil {
+		t.Fatalf("UpsertAccount() error = %v", err)
+	}
+	handler := app.Handler()
+	created := apiRequest(t, handler, http.MethodPost, "/api/proxy-profiles", map[string]any{
+		"name": "巨量代理 1", "provider": "juliang", "proxy_type": "http",
+		"authorization_mode": "auth",
+		"trade_no":           "1234567890123456",
+		"api_key":            "0123456789abcdef0123456789abcdef",
+	})
+	if created.Code != http.StatusCreated {
+		t.Fatalf("POST juliang profile status = %d body=%s", created.Code, created.Body.String())
+	}
+	var profileResponse struct {
+		Data store.ProxyProviderProfile `json:"data"`
+	}
+	if err := json.Unmarshal(created.Body.Bytes(), &profileResponse); err != nil || profileResponse.Data.ID == 0 {
+		t.Fatalf("decode juliang profile = %#v, %v", profileResponse, err)
+	}
+	if !strings.HasPrefix(profileResponse.Data.APIURL, "juliang://company/dynamic?") {
+		t.Fatalf("stored juliang profile URL = %q", profileResponse.Data.APIURL)
+	}
+	saved := apiRequest(t, handler, http.MethodPut, "/accounts/proxy", map[string]any{
+		"ref": fmt.Sprint(account.ID), "mode": "api", "provider_profile_id": profileResponse.Data.ID,
+		"region_code": "370700", "region_province": "山东省", "region_city": "潍坊市",
+		"refresh_ahead_minutes": 5,
+	})
+	if saved.Code != http.StatusOK {
+		t.Fatalf("PUT juliang account proxy status = %d body=%s", saved.Code, saved.Body.String())
+	}
+	setting, err := app.db.GetAccountProxySetting(context.Background(), account.ID)
+	if err != nil {
+		t.Fatalf("GetAccountProxySetting() error = %v", err)
+	}
+	spec, err := app.proxySpecForSetting(context.Background(), setting)
+	if err != nil {
+		t.Fatalf("proxySpecForSetting() error = %v", err)
+	}
+	u, err := url.Parse(spec.APIURL)
+	if err != nil {
+		t.Fatalf("parse juliang extraction URL: %v", err)
+	}
+	query := u.Query()
+	if u.Scheme != "http" || u.Host != "v2.api.juliangip.com" || query.Get("province") != "山东" || query.Get("city") != "潍坊" || query.Get("auth_type") != "2" || query.Get("result_type") != "json2" || len(query.Get("sign")) != 32 {
+		t.Fatalf("resolved juliang spec = %s", spec.APIURL)
+	}
+}
+
 func TestExistingAccountRescanPreservesProxySetting(t *testing.T) {
 	t.Setenv("GIN_MODE", "test")
 	app, err := NewApp(Config{ResourceRoot: t.TempDir(), RequestTimeout: time.Second})
@@ -187,6 +285,33 @@ func TestExistingAccountRescanPreservesProxySetting(t *testing.T) {
 	setting, err := app.db.GetAccountProxySetting(context.Background(), account.ID)
 	if err != nil || setting.ProviderProfileID == nil || *setting.ProviderProfileID != profile.ID || setting.RegionCode != "370100" {
 		t.Fatalf("proxy after rescan = %#v, %v", setting, err)
+	}
+}
+
+func TestWXAppCallUsesExistingLoginBufferBeforeRefreshing(t *testing.T) {
+	t.Setenv("GIN_MODE", "test")
+	app, err := NewApp(Config{ResourceRoot: t.TempDir(), RequestTimeout: time.Second})
+	if err != nil {
+		t.Fatalf("NewApp() error = %v", err)
+	}
+	defer app.Close()
+	status := "alive"
+	account, err := app.db.UpsertAccount(context.Background(), "reuse-login-buffer", "buffer", nil, nil, nil, nil, map[string]any{"refreshtoken": "refresh"}, &status)
+	if err != nil {
+		t.Fatalf("UpsertAccount() error = %v", err)
+	}
+	refreshCalls := 0
+	app.refreshLoginBuffer = func(context.Context, protocol.LoginBufferCredentials) (protocol.LoginBufferResult, error) {
+		refreshCalls++
+		return protocol.LoginBufferResult{}, errors.New("refresh should not run")
+	}
+	callCount := 0
+	result, err := app.invokeWXApp(context.Background(), account, "wx0000000000000000", nil, func(context.Context, *store.WechatAccount, string, map[string]any, string, bool) (map[string]any, error) {
+		callCount++
+		return map[string]any{"code": "ok"}, nil
+	})
+	if err != nil || result["code"] != "ok" || callCount != 1 || refreshCalls != 0 {
+		t.Fatalf("invokeWXApp() result=%#v err=%v calls=%d refreshes=%d", result, err, callCount, refreshCalls)
 	}
 }
 

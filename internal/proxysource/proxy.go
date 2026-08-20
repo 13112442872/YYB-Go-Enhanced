@@ -280,8 +280,8 @@ func endpointFromMap(values map[string]any) (Endpoint, bool) {
 }
 
 func applyCredentials(endpoint *Endpoint, values map[string]any) {
-	endpoint.Username = firstString(values, "user", "username", "account", "proxy_user")
-	endpoint.Password = firstString(values, "pass", "password", "pwd", "proxy_pass")
+	endpoint.Username = firstString(values, "user", "username", "account", "proxy_user", "http_user")
+	endpoint.Password = firstString(values, "pass", "password", "pwd", "proxy_pass", "http_pass")
 }
 
 func lookupFold(values map[string]any, wanted string) (any, bool) {

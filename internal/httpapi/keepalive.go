@@ -158,13 +158,15 @@ func definitiveCredentialFailure(err error) bool {
 	if errors.As(err, &rejected) {
 		return definitiveRefreshMessage(rejected.Message)
 	}
-	message := strings.ToLower(err.Error())
-	return strings.Contains(message, "42007") && strings.Contains(message, "refresh_token")
+	return definitiveRefreshMessage(err.Error())
 }
 
 func definitiveRefreshMessage(raw string) bool {
 	message := strings.ToLower(strings.TrimSpace(raw))
 	if strings.Contains(message, "42007") && strings.Contains(message, "refresh_token") {
+		return true
+	}
+	if strings.Contains(message, "40188") && strings.Contains(message, "invalid scope") {
 		return true
 	}
 	invalid := strings.Contains(message, "invalid") || strings.Contains(message, "expired") ||

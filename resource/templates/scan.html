@@ -80,7 +80,7 @@
                 <option value="direct">直连</option>
                 <option value="static">静态代理</option>
                 <option value="api">动态代理 API</option>
-				<option value="profile">品赞配置</option>
+				<option value="profile">供应商配置</option>
               </select>
             </div>
             <div class="field">
@@ -99,7 +99,7 @@
               <input class="input" id="scanProxyAPI" placeholder="https://example.com/get?province=山东&city=济南" autocomplete="off" spellcheck="false">
             </div>
 			<div class="field proxy-wide" id="scanProxyProfileGroup" hidden>
-			  <label for="scanProxyProfile">品赞配置</label>
+			  <label for="scanProxyProfile">供应商配置</label>
 			  <select class="input" id="scanProxyProfile"></select>
 			</div>
 			<div class="field" id="scanProvinceGroup" hidden>
@@ -178,11 +178,11 @@
     async function api(method,url,body) { const options={method,headers:{"Content-Type":"application/json"}}; if(body!==undefined) options.body=JSON.stringify(body); const response=await fetch(url,options); const text=await response.text(); let payload=null; try{payload=text?JSON.parse(text):null}catch{payload=text} const envelope=payload&&typeof payload==="object"&&!Array.isArray(payload)&&"code" in payload&&"data" in payload; if(!response.ok||(envelope&&payload.code!==0)) throw new Error(envelope?payload.msg:`HTTP ${response.status}`); return envelope?payload.data:payload; }
     function stopTimers(){ if(pollTimer) clearInterval(pollTimer); if(countdownTimer) clearInterval(countdownTimer); pollTimer=countdownTimer=null; }
 	function proxyPayload(){ const mode=$('scanProxyMode').value,profileMode=mode==="profile",province=$('scanProvince'),city=$('scanCity').value; return {mode:profileMode?"api":mode,proxy_type:$('scanProxyType').value,static_proxy:$('scanStaticProxy').value.trim(),api_url:$('scanProxyAPI').value.trim(),provider_profile_id:profileMode&&$('scanProxyProfile').value?Number($('scanProxyProfile').value):null,region_code:profileMode?(city||province.value):"",region_province:profileMode&&province.value!=="all"?province.options[province.selectedIndex]?.text||"":"",region_city:profileMode&&city?$('scanCity').options[$('scanCity').selectedIndex]?.text||"":"",refresh_ahead_minutes:5}; }
-	function proxyChoiceLabel(){const mode=$('scanProxyMode').value;if(mode==="direct")return "直连";if(mode==="static")return "静态代理";if(mode==="api")return "自定义动态 API";const profile=$('scanProxyProfile').options[$('scanProxyProfile').selectedIndex]?.text||"品赞配置",region=$('scanCity').value?$('scanCity').options[$('scanCity').selectedIndex]?.text:$('scanProvince').options[$('scanProvince').selectedIndex]?.text||"全国";return `${profile} · ${region}`;}
+	function proxyChoiceLabel(){const mode=$('scanProxyMode').value;if(mode==="direct")return "直连";if(mode==="static")return "静态代理";if(mode==="api")return "自定义动态 API";const profile=$('scanProxyProfile').options[$('scanProxyProfile').selectedIndex]?.text||"供应商配置",region=$('scanCity').value?$('scanCity').options[$('scanCity').selectedIndex]?.text:$('scanProvince').options[$('scanProvince').selectedIndex]?.text||"全国";return `${profile} · ${region}`;}
 	function showProxyChoice(){ $('scanProxyMessage').textContent=`新账号将使用：${proxyChoiceLabel()}。已有账号重扫时保留原代理。`; }
 	function toggleProxyFields(){ const mode=$('scanProxyMode').value; $('scanStaticProxyGroup').hidden=mode!=="static"; $('scanProxyAPIGroup').hidden=mode!=="api"; $('scanProxyProfileGroup').hidden=mode!=="profile"; $('scanProvinceGroup').hidden=mode!=="profile"; $('scanCityGroup').hidden=mode!=="profile"; $('scanProxyType').disabled=mode==="direct"||mode==="profile";showProxyChoice(); }
 	async function loadScanCities(province){ if(!province||province==="all"){$('scanCity').innerHTML='<option value="">全国</option>';showProxyChoice();return;} let cities=proxyCities.get(province);if(!cities){cities=await api("GET",`/api/proxy-profiles/areas/cities?province=${encodeURIComponent(province)}`);proxyCities.set(province,cities)}$('scanCity').innerHTML='<option value="">全省</option>'+cities.map(area=>`<option value="${area.code}">${area.name}</option>`).join('');showProxyChoice(); }
-	async function initializeProxyOptions(){ try{const [profiles,provinces]=await Promise.all([api("GET","/api/proxy-profiles"),api("GET","/api/proxy-profiles/areas/provinces")]);proxyProfiles=profiles;$('scanProxyProfile').innerHTML=profiles.map(profile=>`<option value="${profile.id}">${profile.name}</option>`).join('')||'<option value="">请先在代理设置中添加配置</option>';$('scanProvince').innerHTML=provinces.map(area=>`<option value="${area.code}">${area.name}</option>`).join('');}catch(error){$('scanProxyMessage').textContent=`品赞配置读取失败：${error.message}`;} }
+	async function initializeProxyOptions(){ try{const [profiles,provinces]=await Promise.all([api("GET","/api/proxy-profiles"),api("GET","/api/proxy-profiles/areas/provinces")]);proxyProfiles=profiles;$('scanProxyProfile').innerHTML=profiles.map(profile=>`<option value="${profile.id}">${profile.name} · ${profile.provider==="juliang"?"巨量":"品赞"}</option>`).join('')||'<option value="">请先在代理设置中添加配置</option>';$('scanProvince').innerHTML=provinces.map(area=>`<option value="${area.code}">${area.name}</option>`).join('');}catch(error){$('scanProxyMessage').textContent=`供应商配置读取失败：${error.message}`;} }
     async function testProxy(){ const button=$('scanProxyTestBtn'); button.disabled=true; $('scanProxyMessage').textContent="正在提取并校验代理"; try{const result=await api("POST","/accounts/proxy/test",proxyPayload());$('scanProxyMessage').textContent=result.resolved?`代理解析成功：${result.proxy}`:"直连模式无需代理";}catch(error){$('scanProxyMessage').textContent=`代理测试失败：${error.message}`;}finally{button.disabled=false;} }
     function applyProxy(){ stopTimers(); sid=null; quickConfig=null; quickPort=null; quickProfile=null; $('scanProxyMessage').textContent="代理配置已应用到新的授权会话"; const quick=$('quickModeBtn').getAttribute('aria-selected')==='true'; if(quick)detectQuickLogin();else newQR(); }
     function setStatus(text,type="pending"){ $("status").textContent=text; $("status").className=`status ${type}`; }

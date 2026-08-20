@@ -22,6 +22,7 @@ func TestParseResponseFormats(t *testing.T) {
 		{"json", `{"code":0,"data":[{"ip":"203.0.113.12","port":9000}]}`, Endpoint{Host: "203.0.113.12", Port: 9000}},
 		{"ipzan-json-auth", `{"data":{"list":[{"ip":"203.0.113.18","port":40006,"expired":1726210338000,"account":"ipzan-account","password":"ipzan-password"}]},"code":0,"message":"","status":200}`, Endpoint{Host: "203.0.113.18", Port: 40006, Username: "ipzan-account", Password: "ipzan-password"}},
 		{"json2", `{"success":true,"data":{"proxy_list":[{"host":"203.0.113.13","proxy_port":"9001","username":"u","password":"p"}]}}`, Endpoint{Host: "203.0.113.13", Port: 9001, Username: "u", Password: "p"}},
+		{"juliang-json2-auth", `{"code":200,"msg":"成功","data":{"proxy_list":[{"city":"潍坊","http_pass":"juliang-pass","http_user":"juliang-user","ip":"203.0.113.19","port":"30030","province":"山东"}]}}`, Endpoint{Host: "203.0.113.19", Port: 30030, Username: "juliang-user", Password: "juliang-pass"}},
 		{"nested-string", `{"result":{"proxy":"203.0.113.14:9002"}}`, Endpoint{Host: "203.0.113.14", Port: 9002}},
 	}
 	for _, test := range tests {
