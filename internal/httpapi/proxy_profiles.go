@@ -273,7 +273,7 @@ func ipzanURLForRegion(profile *store.ProxyProviderProfile, regionCode string) (
 	return u.String(), nil
 }
 
-func juliangURLForRegion(profile *store.ProxyProviderProfile, regionCode string) (string, error) {
+func juliangURLForRegion(profile *store.ProxyProviderProfile, province, city string) (string, error) {
 	internalURL, err := normalizeJuliangProfile(profile.APIURL, "", "", "")
 	if err != nil {
 		return "", err
@@ -294,12 +294,12 @@ func juliangURLForRegion(profile *store.ProxyProviderProfile, regionCode string)
 	} else {
 		params["auth_type"] = "2"
 	}
-	regionCode = strings.TrimSpace(regionCode)
-	if regionCode != "" && regionCode != "all" {
-		if !digitsOnly(regionCode) || len(regionCode) != 6 {
-			return "", fmt.Errorf("巨量地区编码必须为 6 位数字")
-		}
-		params["area"] = regionCode
+	area := normalizeRegionName(city)
+	if area == "" {
+		area = normalizeRegionName(province)
+	}
+	if area != "" {
+		params["area"] = area
 	}
 	params["sign"] = juliangSign(params, profileQuery.Get("key"))
 	endpoint, _ := url.Parse(juliangAPIEndpoint)
@@ -311,15 +311,23 @@ func juliangURLForRegion(profile *store.ProxyProviderProfile, regionCode string)
 	return endpoint.String(), nil
 }
 
-func proxyProfileURLForRegion(profile *store.ProxyProviderProfile, regionCode string) (string, error) {
+func proxyProfileURLForRegion(profile *store.ProxyProviderProfile, regionCode, province, city string) (string, error) {
 	switch strings.ToLower(strings.TrimSpace(profile.Provider)) {
 	case "ipzan", "":
 		return ipzanURLForRegion(profile, regionCode)
 	case "juliang":
-		return juliangURLForRegion(profile, regionCode)
+		return juliangURLForRegion(profile, province, city)
 	default:
 		return "", fmt.Errorf("不支持的代理供应商: %s", profile.Provider)
 	}
+}
+
+func normalizeRegionName(value string) string {
+	value = strings.TrimSpace(value)
+	for _, suffix := range []string{"壮族自治区", "回族自治区", "维吾尔自治区", "特别行政区", "自治区", "省", "市"} {
+		value = strings.TrimSuffix(value, suffix)
+	}
+	return value
 }
 
 func juliangSign(params map[string]string, apiKey string) string {
@@ -357,7 +365,7 @@ func (a *App) normalizeAccountProxyInput(ctx context.Context, body accountProxyI
 		if err != nil {
 			return accountProxyIn{}, proxysource.Spec{}, err
 		}
-		apiURL, err := proxyProfileURLForRegion(profile, body.RegionCode)
+		apiURL, err := proxyProfileURLForRegion(profile, body.RegionCode, body.RegionProvince, body.RegionCity)
 		if err != nil {
 			return accountProxyIn{}, proxysource.Spec{}, err
 		}
@@ -380,7 +388,7 @@ func (a *App) proxySpecForSetting(ctx context.Context, setting *store.AccountPro
 	if err != nil {
 		return proxysource.Spec{}, err
 	}
-	apiURL, err := proxyProfileURLForRegion(profile, setting.RegionCode)
+	apiURL, err := proxyProfileURLForRegion(profile, setting.RegionCode, setting.RegionProvince, setting.RegionCity)
 	if err != nil {
 		return proxysource.Spec{}, err
 	}

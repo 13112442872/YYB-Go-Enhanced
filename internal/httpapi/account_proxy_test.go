@@ -254,7 +254,7 @@ func TestJuliangProfilesSignEachAccountRegion(t *testing.T) {
 		t.Fatalf("parse juliang extraction URL: %v", err)
 	}
 	query := u.Query()
-	if u.Scheme != "http" || u.Host != "v2.api.juliangip.com" || query.Get("area") != "370700" || query.Get("province") != "" || query.Get("city") != "" || query.Get("auth_type") != "2" || query.Get("result_type") != "json2" || len(query.Get("sign")) != 32 {
+	if u.Scheme != "http" || u.Host != "v2.api.juliangip.com" || query.Get("area") != "潍坊" || query.Get("province") != "" || query.Get("city") != "" || query.Get("auth_type") != "2" || query.Get("result_type") != "json2" || len(query.Get("sign")) != 32 {
 		t.Fatalf("resolved juliang spec = %s", spec.APIURL)
 	}
 }
