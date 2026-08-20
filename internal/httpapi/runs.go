@@ -468,7 +468,7 @@ func parseScriptKeyFromCron(cron qingLongCron, repos []string) (string, string, 
 		return "", "", false
 	}
 	cmd := strings.TrimSpace(cron.Command)
-	for _, p := range []string{"task ", "node ", "python3 ", "python "} {
+	for _, p := range []string{"arcadia run ", "task ", "node ", "python3 ", "python "} {
 		if strings.HasPrefix(cmd, p) {
 			cmd = strings.TrimSpace(strings.TrimPrefix(cmd, p))
 		}

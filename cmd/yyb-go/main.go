@@ -35,9 +35,15 @@ func main() {
 	if panelType == "" {
 		panelType = "qinglong"
 	}
+	panelType = strings.ToLower(strings.TrimSpace(panelType))
 
 	var panelURL string
-	if panelType == "daidai" {
+	if panelType == "arcadia" {
+		panelURL = getEnvWithFallback("ARCADIA_URL")
+		if panelURL == "" {
+			panelURL = "http://arcadia:5678"
+		}
+	} else if panelType == "daidai" {
 		daidaiURL := getEnvWithFallback("DAIDAI_URL")
 		qlURL := getEnvWithFallback("QL_URL")
 		if daidaiURL != "" {
@@ -60,7 +66,10 @@ func main() {
 	}
 
 	var clientID, clientSecret string
-	if panelType == "daidai" {
+	if panelType == "arcadia" {
+		clientID = "api-token"
+		clientSecret = getEnvWithFallback("ARCADIA_TOKEN")
+	} else if panelType == "daidai" {
 		clientID = getEnvWithFallback("DAIDAI_APP_KEY", "QL_CLIENT_ID")
 		clientSecret = getEnvWithFallback("DAIDAI_APP_SECRET", "QL_CLIENT_SECRET")
 	} else {

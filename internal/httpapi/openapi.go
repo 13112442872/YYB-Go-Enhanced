@@ -27,7 +27,7 @@ func newOpenAPISpec() map[string]any {
 			{"name": "quick-login", "description": "桌面微信快速授权"},
 			{"name": "accounts", "description": "已保存的微信账号"},
 			{"name": "proxy-profiles", "description": "可复用的品赞代理配置与地区"},
-			{"name": "qinglong", "description": "账号级青龙任务与推送管理"},
+			{"name": "qinglong", "description": "账号级自动化面板任务与推送管理（兼容青龙、呆呆和 Arcadia）"},
 			{"name": "wxapp", "description": "wxapp 业务接口调用"},
 			{"name": "wx", "description": "兼容 /wx/* 的微信业务接口"},
 			{"name": "oauth", "description": "微信公众号网页授权链接"},
@@ -225,24 +225,24 @@ func newOpenAPISpec() map[string]any {
 			},
 			"/api/qinglong/status": map[string]any{
 				"get": openAPIOperation(
-					[]string{"qinglong"}, "检查青龙连接状态", nil, nil,
-					defaulted(map[string]any{"200": jsonResponse("青龙配置和连接状态。", refSchema("QingLongStatus"))}),
+					[]string{"qinglong"}, "检查自动化面板连接状态", nil, nil,
+					defaulted(map[string]any{"200": jsonResponse("面板配置和连接状态。", refSchema("QingLongStatus"))}),
 				),
 			},
 			"/api/qinglong/config": map[string]any{
 				"get": openAPIOperation(
-					[]string{"qinglong"}, "读取青龙连接配置", nil, nil,
+					[]string{"qinglong"}, "读取自动化面板连接配置", nil, nil,
 					defaulted(map[string]any{"200": jsonResponse("不包含 Client Secret 明文。", refSchema("QingLongConfig"))}),
 				),
 				"put": openAPIOperation(
-					[]string{"qinglong"}, "测试并保存青龙连接配置", nil,
+					[]string{"qinglong"}, "测试并保存自动化面板连接配置", nil,
 					jsonRequestBody(refSchema("QingLongConfigRequest")),
 					defaulted(map[string]any{"200": jsonResponse("连接测试及保存结果。", refSchema("QingLongConfig"))}),
 				),
 			},
 			"/api/qinglong/sync": map[string]any{
 				"post": openAPIOperation(
-					[]string{"qinglong"}, "将账号加入青龙 YYB_SERVER", nil,
+					[]string{"qinglong"}, "将账号加入面板 YYB_SERVER", nil,
 					jsonRequestBody(refSchema("AccountRefRequest")),
 					defaulted(map[string]any{"200": jsonResponse("幂等同步结果。", refSchema("QingLongSyncResponse"))}),
 				),
@@ -567,6 +567,7 @@ func newOpenAPISpec() map[string]any {
 					"error":      nullableStringSchema("连接失败时的错误摘要。"),
 				}),
 				"QingLongConfig": objectSchema([]string{"url", "client_id", "secret_configured", "configured"}, map[string]any{
+					"type":              map[string]any{"type": "string", "enum": []string{"qinglong", "daidai", "arcadia"}},
 					"url":               map[string]any{"type": "string"},
 					"client_id":         map[string]any{"type": "string"},
 					"secret_configured": map[string]any{"type": "boolean"},
@@ -574,9 +575,10 @@ func newOpenAPISpec() map[string]any {
 					"connected":         map[string]any{"type": "boolean"},
 				}),
 				"QingLongConfigRequest": objectSchema(nil, map[string]any{
+					"type":          map[string]any{"type": "string", "enum": []string{"qinglong", "daidai", "arcadia"}, "default": "qinglong"},
 					"url":           map[string]any{"type": "string", "example": "http://qinglong:5700"},
-					"client_id":     map[string]any{"type": "string"},
-					"client_secret": map[string]any{"type": "string", "writeOnly": true, "description": "留空表示保留已保存的密钥。"},
+					"client_id":     map[string]any{"type": "string", "description": "青龙 Client ID 或呆呆 App Key；Arcadia 模式忽略此字段。"},
+					"client_secret": map[string]any{"type": "string", "writeOnly": true, "description": "青龙 Client Secret、呆呆 App Secret 或 Arcadia OpenAPI Token；留空表示保留。"},
 					"clear":         map[string]any{"type": "boolean", "description": "设为 true 时清除连接配置。"},
 				}),
 				"QingLongSyncResponse": objectSchema([]string{"account", "name", "value", "added"}, map[string]any{

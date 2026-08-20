@@ -795,7 +795,7 @@
             <div class="account-tools">
               <input class="input" id="accountRemarkInput" maxlength="80" placeholder="账号备注，例如：Boom">
               <button class="btn secondary" id="saveRemarkBtn" type="button">保存备注</button>
-              <button class="btn secondary" id="syncQingLongBtn" type="button">同步到青龙</button>
+              <button class="btn secondary" id="syncQingLongBtn" type="button">同步到面板</button>
               <button class="btn danger" id="deleteAccountBtn" type="button">删除账号</button>
             </div>
             <div class="proxy-summary">
@@ -881,20 +881,21 @@
               </a>
             </div>
             <details class="integration" id="qingLongSettings">
-              <summary id="panelSettingsSummary">面板连接设置（青龙 / 呆呆面板）</summary>
+              <summary id="panelSettingsSummary">面板连接设置（青龙 / 呆呆 / Arcadia）</summary>
               <div class="form-grid">
                 <div class="field">
                   <label for="qingLongType">面板类型</label>
                   <select class="input" id="qingLongType" onchange="updatePanelLabels()">
                     <option value="qinglong">青龙面板 (Qinglong)</option>
                     <option value="daidai">呆呆面板 (daidai-panel)</option>
+                    <option value="arcadia">Arcadia</option>
                   </select>
                 </div>
                 <div class="field">
                   <label for="qingLongURL" id="labelPanelURL">面板地址</label>
                   <input class="input" id="qingLongURL" placeholder="http://qinglong:5700" autocomplete="url">
                 </div>
-                <div class="field">
+                <div class="field" id="clientIDField">
                   <label for="qingLongClientID" id="labelClientID">Client ID / App Key</label>
                   <input class="input" id="qingLongClientID" autocomplete="off">
                 </div>
@@ -1208,11 +1209,21 @@
         $("qingLongURL").placeholder = "http://daidai-panel:5700";
         $("labelClientID").textContent = "App Key";
         $("labelClientSecret").textContent = "App Secret";
+        $("clientIDField").hidden = false;
+        $("qingLongClientID").disabled = false;
+      } else if (type === "arcadia") {
+        $("labelPanelURL").textContent = "Arcadia 地址";
+        $("qingLongURL").placeholder = "http://arcadia:5678";
+        $("labelClientSecret").textContent = "OpenAPI Token";
+        $("clientIDField").hidden = true;
+        $("qingLongClientID").disabled = true;
       } else {
         $("labelPanelURL").textContent = "青龙地址";
         $("qingLongURL").placeholder = "http://qinglong:5700";
         $("labelClientID").textContent = "Client ID";
         $("labelClientSecret").textContent = "Client Secret";
+        $("clientIDField").hidden = false;
+        $("qingLongClientID").disabled = false;
       }
     }
 
@@ -1224,7 +1235,7 @@
         $("qingLongURL").value = config.url || "";
         $("qingLongClientID").value = config.client_id || "";
         $("qingLongSecret").value = "";
-        const secretLabel = config.type === "daidai" ? "App Secret" : "Client Secret";
+        const secretLabel = config.type === "daidai" ? "App Secret" : config.type === "arcadia" ? "OpenAPI Token" : "Client Secret";
         $("qingLongSecret").placeholder = config.secret_configured ? "已配置，留空表示保留" : `请输入 ${secretLabel}`;
         $("qingLongSecretNote").textContent = config.configured ? "连接参数已保存；修改时会先测试连接" : "尚未配置；保存时会先测试连接";
       } catch (error) {
@@ -1261,7 +1272,7 @@
         state.accounts[index] = saved.account;
         const result = await api("POST", "/api/qinglong/sync", { ref: String(account.id) });
         renderAccounts();
-        const panelName = $("qingLongType").value === "daidai" ? "呆呆面板" : "青龙";
+        const panelName = $("qingLongType").value === "daidai" ? "呆呆面板" : $("qingLongType").value === "arcadia" ? "Arcadia" : "青龙";
         setActivity(result.added ? `账号 ${account.id} 已添加到${panelName} YYB_SERVER` : `${panelName} YYB_SERVER 已包含账号 ${account.id}`);
       } catch (error) {
         setActivity(`同步面板失败：${error.message}`);
@@ -1311,7 +1322,7 @@
       try {
         await api("PUT", "/api/qinglong/config", { type: $("qingLongType").value, url: $("qingLongURL").value, client_id: $("qingLongClientID").value, client_secret: $("qingLongSecret").value });
         await loadQingLongConfig();
-        const panelName = $("qingLongType").value === "daidai" ? "呆呆面板" : "青龙";
+        const panelName = $("qingLongType").value === "daidai" ? "呆呆面板" : $("qingLongType").value === "arcadia" ? "Arcadia" : "青龙";
         setActivity(`${panelName}连接测试成功，配置已保存`);
       } catch (error) {
         setActivity(`面板配置保存失败：${error.message}`);

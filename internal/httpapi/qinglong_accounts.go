@@ -116,17 +116,18 @@ func (a *App) handleQingLongConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		pType := strings.ToLower(strings.TrimSpace(body.Type))
-		if pType != PanelTypeDaidai {
-			pType = PanelTypeQingLong
-		}
+		pType = normalizePanelType(pType)
 		baseURL := strings.TrimRight(strings.TrimSpace(body.URL), "/")
 		clientID := strings.TrimSpace(body.ClientID)
-		_, _, _, currentSecret := a.qinglong.configuration()
+		if pType == PanelTypeArcadia {
+			clientID = "api-token"
+		}
+		currentType, _, _, currentSecret := a.qinglong.configuration()
 		secret := strings.TrimSpace(body.ClientSecret)
-		if secret == "" {
+		if secret == "" && currentType == pType {
 			secret = currentSecret
 		}
-		if err := validateQingLongConfig(baseURL, clientID, secret); err != nil {
+		if err := validatePanelConfig(pType, baseURL, clientID, secret); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -135,6 +136,8 @@ func (a *App) handleQingLongConfig(w http.ResponseWriter, r *http.Request) {
 			panelName := "面板"
 			if pType == PanelTypeDaidai {
 				panelName = "呆呆面板"
+			} else if pType == PanelTypeArcadia {
+				panelName = "Arcadia 面板"
 			} else {
 				panelName = "青龙面板"
 			}
@@ -169,16 +172,19 @@ func (a *App) persistQingLongConfig(ctx context.Context, pType, baseURL, clientI
 	return nil
 }
 
-func validateQingLongConfig(baseURL, clientID, secret string) error {
+func validatePanelConfig(panelType, baseURL, clientID, secret string) error {
 	if baseURL == "" || clientID == "" || secret == "" {
-		return errors.New("青龙地址、Client ID 和 Client Secret 均不能为空")
+		if panelType == PanelTypeArcadia {
+			return errors.New("Arcadia 地址和 OpenAPI Token 均不能为空")
+		}
+		return errors.New("面板地址和鉴权凭据均不能为空")
 	}
 	parsed, err := url.Parse(baseURL)
 	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
-		return errors.New("青龙地址必须是有效的 http 或 https URL")
+		return errors.New("面板地址必须是有效的 http 或 https URL")
 	}
 	if parsed.RawQuery != "" || parsed.Fragment != "" {
-		return errors.New("青龙地址不能包含查询参数或片段")
+		return errors.New("面板地址不能包含查询参数或片段")
 	}
 	return nil
 }
@@ -189,7 +195,7 @@ func (a *App) handleQingLongSync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !a.qinglong.configured() {
-		writeError(w, http.StatusConflict, "请先配置青龙 OpenAPI")
+		writeError(w, http.StatusConflict, "请先配置面板 OpenAPI")
 		return
 	}
 	var body qingLongSyncIn

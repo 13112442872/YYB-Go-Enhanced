@@ -39,10 +39,14 @@ func newPanelManager(panelType, baseURL, clientID, clientSecret string, timeout 
 }
 
 func (p *panelManager) createDriver(pType, baseURL, clientID, secret string) PanelDriver {
-	if normalizePanelType(pType) == PanelTypeDaidai {
+	switch normalizePanelType(pType) {
+	case PanelTypeDaidai:
 		return newDaidaiDriver(baseURL, clientID, secret, p.timeout)
+	case PanelTypeArcadia:
+		return newArcadiaDriver(baseURL, secret, p.timeout)
+	default:
+		return newQingLongDriver(baseURL, clientID, secret, p.timeout)
 	}
-	return newQingLongDriver(baseURL, clientID, secret, p.timeout)
 }
 
 func (p *panelManager) configured() bool {
@@ -106,7 +110,7 @@ func (p *panelManager) status(ctx context.Context) error {
 	if err == nil {
 		return nil
 	}
-	if strings.Contains(err.Error(), "404") || strings.Contains(err.Error(), "405") {
+	if driver.PanelType() != PanelTypeArcadia && (strings.Contains(err.Error(), "404") || strings.Contains(err.Error(), "405")) {
 		altType := PanelTypeQingLong
 		if driver.PanelType() == PanelTypeQingLong {
 			altType = PanelTypeDaidai

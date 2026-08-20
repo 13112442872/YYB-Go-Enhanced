@@ -2,6 +2,12 @@
 
 本项目按实际提交时间记录主要功能变化，便于部署后确认版本内容。
 
+## 2026-08-20
+
+- 增加 Arcadia 面板驱动，支持通过 OpenAPI Token 管理 `YYB_SERVER`、账号独立任务、启停、立即运行和删除。
+- 识别 Arcadia 的 `arcadia run 仓库/脚本` 命令；YYB 托管任务将日志写入 `/arcadia/log/yyb_account_*` 并通过 File OpenAPI 回读，不改写已有 Arcadia 任务。
+- Web 面板设置增加 Arcadia 类型与 Token 专用交互，Compose 支持 `ARCADIA_URL`、`ARCADIA_TOKEN`，并补充权限和部署说明。
+
 ## 2026-08-19
 
 - 增加可命名的品赞代理配置库，支持“品赞代理 1 / 品赞代理 2”等多条 `core-extract` 链接；账号独立选择配置、省份和城市，配置链接修改后关联账号自动生效。

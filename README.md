@@ -149,9 +149,9 @@ YYB_KEEPALIVE_AHEAD=45m
 
 将 `YYB_KEEPALIVE_INTERVAL` 设为 `0` 可关闭后台保活。提前续期遇到临时网络失败时会保留当前账号状态并在后续周期重试；凭据真正过期或 refresh token 被服务端撤销后会标记为需重扫，并停止保活和协议调用，避免继续消耗动态代理。
 
-## 青龙与呆呆面板接入
+## 青龙、呆呆与 Arcadia 面板接入
 
-支持对接 **青龙面板 (Qinglong)** 与 **呆呆面板 (daidai-panel)**：
+支持对接 **青龙面板 (Qinglong)**、**呆呆面板 (daidai-panel)** 与 **Arcadia**：
 
 - **Web 控制台配置**：可在 Web 控制台的“面板连接设置”中选择【青龙面板】或【呆呆面板 (daidai-panel)】，填入面板地址与对应的鉴权凭据（青龙使用 `Client ID` / `Client Secret`；呆呆面板使用 `App Key` / `App Secret`）。配置会持久化到 SQLite 数据库并优先于容器环境变量。
 - **连接类型识别**：保存连接时若面板类型选错，且当前地址返回 `404` 或 `405`，系统会尝试另一种驱动；识别成功后使用正确的面板类型。
@@ -169,8 +169,15 @@ YYB_KEEPALIVE_AHEAD=45m
   DAIDAI_APP_KEY=你的呆呆面板AppKey
   DAIDAI_APP_SECRET=你的呆呆面板AppSecret
   ```
+- **Arcadia 环境变量配置**：
+  ```dotenv
+  PANEL_TYPE=arcadia
+  ARCADIA_URL=http://arcadia:5678
+  ARCADIA_TOKEN=你的Arcadia_OpenAPI_Token
+  ```
+  在 Arcadia 的 OpenAPI 令牌中启用 `env:query`、`env:manage`、`cron:query`、`cron:manage`、`cron:run`、`file:list` 和 `file:read` 权限。Arcadia 不持久化定时任务 stdout，YYB 创建的账号独立任务会将日志写入 `/arcadia/log/yyb_account_*`，再通过 File OpenAPI 回读；现有 Arcadia 任务不会被改写。
 
-升级前已经使用青龙的部署不需要迁移配置，原有 `QL_URL`、`QL_CLIENT_ID` 和 `QL_CLIENT_SECRET` 会继续生效。面板适配层会分别处理青龙和呆呆的任务启停、运行状态与日志接口，避免混用两种面板不同的状态字段。
+升级前已经使用青龙的部署不需要迁移配置，原有 `QL_URL`、`QL_CLIENT_ID` 和 `QL_CLIENT_SECRET` 会继续生效。面板适配层会分别处理三种面板的任务启停、运行状态与日志接口，避免混用不同的状态字段。
 
 扫码成功页和账号控制台都提供“添加/同步到面板”按钮。同步会保留 `YYB_SERVER` 中已有的多行内容和环境变量备注，只追加缺少的账号，并同时识别账号 ID 与 OpenID，避免重复添加。
 
@@ -239,7 +246,7 @@ Web 控制台内还提供完整的 OpenAPI 文档入口。
 
 ## 账号运行管理
 
-在 `.env` 中配置青龙 OpenAPI 后，打开 `/runs`：
+在 `.env` 或 Web 控制台中配置自动化面板 OpenAPI 后，打开 `/runs`。以下为青龙示例：
 
 ```dotenv
 QL_URL=http://qinglong:5700
@@ -249,9 +256,9 @@ YYB_QINGLONG_SERVER=yyb-go:8000
 YYB_QINGLONG_REPO=SuperNaiBA_YYB-GO-Script,525815266_YYB-Go-Enhanced/scripts
 ```
 
-`YYB_QINGLONG_REPO` 填青龙定时任务命令中 `task` 后面的仓库目录，多个目录用英文逗号分隔。通过本仓库订阅脚本时通常为 `525815266_YYB-Go-Enhanced/scripts`；通过上游脚本仓库订阅时为 `SuperNaiBA_YYB-GO-Script`。
+`YYB_QINGLONG_REPO` 填面板定时任务命令中的仓库目录，多个目录用英文逗号分隔。青龙通常使用 `task 仓库/脚本`，Arcadia 使用 `arcadia run 仓库/脚本`。通过本仓库订阅脚本时通常为 `525815266_YYB-Go-Enhanced/scripts`；通过上游脚本仓库订阅时为 `SuperNaiBA_YYB-GO-Script`。
 
-管理页发现上述仓库目录中的 `.js` 和 `.py` 任务。每个“账号 + 脚本”会创建一个独立青龙任务，新任务默认关闭；手动点击“运行一次”才会立即执行。账号变量通过青龙 `task_before` 注入，运行日志按“账号 + 脚本”写入独立目录，管理页只读取当前账号的目录。账号推送 Token 不写入任务命令和 YYB 数据库，接口也不会返回明文。
+管理页发现上述仓库目录中的 `.js` 和 `.py` 任务。每个“账号 + 脚本”会创建一个独立面板任务，新任务默认关闭；手动点击“运行一次”才会立即执行。账号变量会在任务执行前注入，运行日志按“账号 + 脚本”写入独立目录，管理页只读取当前账号的目录。账号推送 Token 不写入任务命令和 YYB 数据库，接口也不会返回明文。
 
 如果原订阅生成的全局任务仍在运行，管理页会显示重复运行提示。迁移到账号任务后，请在青龙中停用对应的旧全局任务。
 

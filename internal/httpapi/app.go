@@ -135,6 +135,9 @@ func NewApp(cfg Config) (*App, error) {
 	cfg.QingLongURL = loadSetting(qingLongURLSetting, cfg.QingLongURL)
 	cfg.QingLongClientID = loadSetting(qingLongClientIDSetting, cfg.QingLongClientID)
 	cfg.QingLongSecret = loadSetting(qingLongSecretSetting, cfg.QingLongSecret)
+	if normalizePanelType(cfg.QingLongType) == PanelTypeArcadia {
+		cfg.QingLongClientID = "api-token"
+	}
 	poolCfg := protocol.DefaultConfig()
 	poolCfg.SessionTTL = cfg.SessionTTL
 	poolCfg.ShortlinkTimeout = cfg.RequestTimeout

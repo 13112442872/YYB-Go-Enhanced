@@ -2,11 +2,14 @@ package httpapi
 
 import (
 	"context"
+	"strings"
+	"time"
 )
 
 const (
 	PanelTypeQingLong = "qinglong"
 	PanelTypeDaidai   = "daidai"
+	PanelTypeArcadia  = "arcadia"
 )
 
 type qingLongEnv struct {
@@ -111,6 +114,10 @@ func (c qingLongCron) getLastExecutionAt() int64 {
 		return int64(v)
 	case int:
 		return int64(v)
+	case string:
+		if parsed, err := time.Parse(time.RFC3339Nano, v); err == nil {
+			return parsed.Unix()
+		}
 	}
 	return 0
 }
@@ -159,8 +166,12 @@ type PanelDriver interface {
 }
 
 func normalizePanelType(pType string) string {
-	if pType == PanelTypeDaidai {
+	switch strings.ToLower(strings.TrimSpace(pType)) {
+	case PanelTypeDaidai:
 		return PanelTypeDaidai
+	case PanelTypeArcadia:
+		return PanelTypeArcadia
+	default:
+		return PanelTypeQingLong
 	}
-	return PanelTypeQingLong
 }
