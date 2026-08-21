@@ -190,6 +190,12 @@ YYB_SERVER=yyb-go:8000@1
 
 `@` 后可以使用控制台显示的账号 ID 或 OpenID。账号 ID 是本地数据库编号，删除并重新添加账号后可能变化；OpenID 更适合长期配置。
 
+使用 OpenID 时要填写控制台显示的完整值，`OpenID` 只是说明文字，不能原样照填。例如：
+
+```env
+YYB_SERVER=yyb-go:8000@owNAxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
 已确认报错的青龙/呆呆面板脚本修复版收录在 [`scripts/`](scripts/README.md)。
 
 ## API 示例

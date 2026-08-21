@@ -291,8 +291,24 @@ func (a *App) handleQingLongRunLog(w http.ResponseWriter, r *http.Request) {
 	}
 	logText, err := a.qinglong.logDetail(r.Context(), logKey[:separator], logKey[separator+1:])
 	if err != nil {
-		writeError(w, http.StatusBadGateway, err.Error())
-		return
+		// QingLong installations differ in which log-detail permission and route
+		// they expose. The cron endpoint is a safe fallback for the latest run.
+		latest := true
+		for i := range runs {
+			if runs[i].QLCronID == selected.QLCronID && runs[i].StartedAt > selected.StartedAt {
+				latest = false
+				break
+			}
+		}
+		if !latest {
+			writeError(w, http.StatusBadGateway, err.Error())
+			return
+		}
+		logText, err = a.qinglong.cronLog(r.Context(), selected.QLCronID)
+		if err != nil {
+			writeError(w, http.StatusBadGateway, err.Error())
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"account_id": acc.ID, "script_key": selected.ScriptKey, "log_key": logKey, "log": logText})
 }

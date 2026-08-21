@@ -320,15 +320,8 @@ func (d *qingLongDriver) LogDetail(ctx context.Context, dir, filename string) (s
 	}
 	var out string
 	reqPath := "/open/logs/detail?" + url.Values{"path": {logPath}}.Encode()
-	if err := d.request(ctx, http.MethodGet, reqPath, nil, &out); err == nil && out != "" {
-		return out, nil
+	if err := d.request(ctx, http.MethodGet, reqPath, nil, &out); err != nil {
+		return "", err
 	}
-	altPath := "/open/logs/" + url.PathEscape(dir)
-	if filename != "" {
-		altPath += "/" + url.PathEscape(filename)
-	}
-	if err := d.request(ctx, http.MethodGet, altPath, nil, &out); err == nil {
-		return out, nil
-	}
-	return "", d.request(ctx, http.MethodGet, reqPath, nil, &out)
+	return out, nil
 }
