@@ -140,6 +140,7 @@
     const escapeHTML=value=>{const node=document.createElement("span");node.textContent=value??"";return node.innerHTML};
     async function api(path,options={}){const response=await fetch(path,{headers:{"Content-Type":"application/json",...(options.headers||{})},...options});const text=await response.text();let payload;try{payload=text?JSON.parse(text):null}catch{throw new Error(`服务返回了非 JSON 内容（HTTP ${response.status}）`)}if(!payload)throw new Error(`服务返回空响应（HTTP ${response.status}）`);if(!response.ok||payload.code!==0)throw new Error(payload.msg||`请求失败（HTTP ${response.status}）`);return payload.data}
     function accountName(account){return account.remark||account.nickname||account.alias||account.openid||"未命名账号"}
+    function accountNumber(account){const index=state.accounts.findIndex(item=>item.openid===account?.openid);return index>=0?index+1:"-"}
     function currentAccount(){return state.accounts.find(account=>String(account.id)===state.selectedID)||null}
     function currentMode(){return document.querySelector('input[name="proxyMode"]:checked')?.value||"direct"}
     function currentProfile(){return state.profiles.find(profile=>String(profile.id)===$("profilePicker").value)||null}
