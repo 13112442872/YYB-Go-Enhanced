@@ -45,6 +45,7 @@ type Config struct {
 	AuthDriver        string
 	AuthDSN           string
 	AuthMySQLDSN      string
+	IntegrationToken  string
 	AdminUser         string
 	AdminPassword     string
 	CookieSecure      bool

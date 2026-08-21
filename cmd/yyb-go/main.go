@@ -107,6 +107,7 @@ func main() {
 		AuthDriver:        authDriver,
 		AuthDSN:           os.Getenv("YYB_AUTH_DSN"),
 		AuthMySQLDSN:      legacyAuthDSN,
+		IntegrationToken:  os.Getenv("YYB_INTEGRATION_TOKEN"),
 		AdminUser:         getEnvWithFallback("YYB_ADMIN_USER", "YYB_WEB_USER"),
 		AdminPassword:     getEnvWithFallback("YYB_ADMIN_PASSWORD", "YYB_WEB_PASSWORD"),
 		CookieSecure:      os.Getenv("YYB_COOKIE_SECURE") == "true",
