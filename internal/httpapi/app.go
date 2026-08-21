@@ -63,14 +63,19 @@ type App struct {
 	qinglong           *qingLongClient
 	auth               *auth.Store
 
-	mu            sync.Mutex
-	qrSessions    map[string]*qrLoginSession
-	quickSessions map[string]quickLoginSession
-	refreshMu     sync.Mutex
-	loginMu       sync.Mutex
-	loginAttempts map[string]loginAttempt
-	proxyMu       sync.Mutex
-	proxyLeases   map[int64]accountProxyLease
+	mu                sync.Mutex
+	qrSessions        map[string]*qrLoginSession
+	quickSessions     map[string]quickLoginSession
+	refreshLocksMu    sync.Mutex
+	refreshLocks      map[int64]*sync.Mutex
+	loginMu           sync.Mutex
+	loginAttempts     map[string]loginAttempt
+	proxyMu           sync.Mutex
+	proxyLeases       map[int64]accountProxyLease
+	proxyLeaseLocksMu sync.Mutex
+	proxyLeaseLocks   map[int64]*sync.Mutex
+	keepAliveRetryMu  sync.Mutex
+	keepAliveRetryAt  map[int64]time.Time
 
 	keepAliveCancel context.CancelFunc
 	keepAliveDone   chan struct{}
@@ -158,7 +163,10 @@ func NewApp(cfg Config) (*App, error) {
 		qrSessions:         map[string]*qrLoginSession{},
 		quickSessions:      map[string]quickLoginSession{},
 		loginAttempts:      map[string]loginAttempt{},
+		refreshLocks:       map[int64]*sync.Mutex{},
 		proxyLeases:        map[int64]accountProxyLease{},
+		proxyLeaseLocks:    map[int64]*sync.Mutex{},
+		keepAliveRetryAt:   map[int64]time.Time{},
 	}
 	authDriver := strings.ToLower(strings.TrimSpace(cfg.AuthDriver))
 	authDSN := strings.TrimSpace(cfg.AuthDSN)
@@ -521,6 +529,8 @@ func (a *App) handleAccountsRoot(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
+		a.invalidateProxyLease(acc.ID)
+		a.clearKeepAliveRetry(acc.ID)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"deleted": acc.ID, "openid": acc.OpenID,
 			"qinglong_cleanup": cleanup.Status, "env_entries_removed": cleanup.EnvEntriesRemoved,

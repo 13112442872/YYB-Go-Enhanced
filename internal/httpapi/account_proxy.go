@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"yyb_go/internal/protocol"
@@ -234,18 +235,35 @@ func (a *App) resolveAccountProxy(ctx context.Context, accountID int64) (string,
 		proxyValue, err := a.resolveProxySpec(ctx, spec)
 		return proxyValue, false, err
 	}
+	leaseLock := a.proxyLeaseLockFor(accountID)
+	leaseLock.Lock()
+	defer leaseLock.Unlock()
 	a.proxyMu.Lock()
-	defer a.proxyMu.Unlock()
 	if lease, ok := a.proxyLeases[accountID]; ok && lease.SettingUpdatedAt == setting.UpdatedAt && time.Now().Before(lease.ExpiresAt) {
+		a.proxyMu.Unlock()
 		return lease.Value, false, nil
 	}
+	a.proxyMu.Unlock()
 	proxyValue, err := a.resolveProxySpec(ctx, spec)
+	a.proxyMu.Lock()
+	defer a.proxyMu.Unlock()
 	if err == nil && proxyValue != "" {
 		a.proxyLeases[accountID] = accountProxyLease{Value: proxyValue, SettingUpdatedAt: setting.UpdatedAt, ExpiresAt: time.Now().Add(accountProxyLeaseTTL)}
 	} else {
 		delete(a.proxyLeases, accountID)
 	}
 	return proxyValue, false, err
+}
+
+func (a *App) proxyLeaseLockFor(accountID int64) *sync.Mutex {
+	a.proxyLeaseLocksMu.Lock()
+	defer a.proxyLeaseLocksMu.Unlock()
+	if lock := a.proxyLeaseLocks[accountID]; lock != nil {
+		return lock
+	}
+	lock := &sync.Mutex{}
+	a.proxyLeaseLocks[accountID] = lock
+	return lock
 }
 
 func (a *App) invalidateProxyLease(accountID int64) {

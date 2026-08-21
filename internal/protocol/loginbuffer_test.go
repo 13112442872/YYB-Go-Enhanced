@@ -31,3 +31,15 @@ func TestCredentialsMapStartsRefreshTokenObservation(t *testing.T) {
 		t.Fatalf("refresh_token_observed_at = %d, want between %d and %d", observedAt, before, after)
 	}
 }
+
+func TestCredentialsMapDerivesMissingExpiryFromRefreshTimestamp(t *testing.T) {
+	refreshedAt := time.Now().Add(-30 * time.Minute).Unix()
+	got := CredentialsFromMap(map[string]any{
+		"expires_in":           int64(7200),
+		"refresh_refreshed_at": refreshedAt,
+	})
+	want := refreshedAt + 7200
+	if got.ExpiresAt != want {
+		t.Fatalf("ExpiresAt = %d, want %d", got.ExpiresAt, want)
+	}
+}

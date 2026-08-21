@@ -46,6 +46,13 @@ type LoginBufferCredentials struct {
 }
 
 func CredentialsFromMap(m map[string]any) LoginBufferCredentials {
+	expiresIn := defaultInt64(int64FromMap(m, "expires_in"), 7200)
+	expiresAt := int64FromMap(m, "expires_at")
+	if expiresAt <= 0 {
+		if refreshedAt := int64FromMap(m, "refresh_refreshed_at"); refreshedAt > 0 {
+			expiresAt = refreshedAt + expiresIn
+		}
+	}
 	return LoginBufferCredentials{
 		OpenID:                 stringFromMap(m, "openid"),
 		AccessToken:            stringFromMap(m, "accesstoken"),
@@ -53,8 +60,8 @@ func CredentialsFromMap(m map[string]any) LoginBufferCredentials {
 		RefreshTokenObservedAt: int64FromMap(m, "refresh_token_observed_at"),
 		LoginType:              defaultString(stringFromMap(m, "logintype"), "WX"),
 		Nickname:               stringFromMap(m, "nickname"),
-		ExpiresAt:              int64FromMap(m, "expires_at"),
-		ExpiresIn:              defaultInt64(int64FromMap(m, "expires_in"), 7200),
+		ExpiresAt:              expiresAt,
+		ExpiresIn:              expiresIn,
 	}
 }
 

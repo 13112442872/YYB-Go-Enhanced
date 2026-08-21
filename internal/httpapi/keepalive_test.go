@@ -106,6 +106,28 @@ func TestRefreshAccountRetriesAfterFailure(t *testing.T) {
 	}
 }
 
+func TestKeepAliveSkipsFreshAndBackoffAccounts(t *testing.T) {
+	app := newKeepAliveTestApp(t)
+	defer app.Close()
+
+	now := time.Now()
+	due := insertKeepAliveTestAccount(t, app, "openid-backoff-due", now.Add(10*time.Minute))
+	app.setKeepAliveRetry(due.ID, now.Add(time.Minute))
+	if !app.keepAliveShouldSkip(context.Background(), due, now) {
+		t.Fatal("recently failed due account should be in keepalive backoff")
+	}
+
+	fresh := insertKeepAliveTestAccount(t, app, "openid-backoff-fresh", now.Add(2*time.Hour))
+	app.setKeepAliveRetry(fresh.ID, now.Add(time.Minute))
+	if !app.keepAliveShouldSkip(context.Background(), fresh, now) {
+		t.Fatal("fresh account should be skipped before scheduling refresh")
+	}
+
+	if app.keepAliveShouldSkip(context.Background(), due, now.Add(2*time.Minute)) {
+		t.Fatal("elapsed retry window should not remain in keepalive backoff")
+	}
+}
+
 func TestManualLivenessCheckDoesNotRotateFreshCredentials(t *testing.T) {
 	app := newKeepAliveTestApp(t)
 	defer app.Close()
