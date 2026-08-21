@@ -151,6 +151,13 @@ def load_account_labels(accounts: List[AccountTarget]) -> None:
                 account.nickname = str(item.get("nickname") or "").strip()
                 break
 
+
+def apply_account_label(account: AccountTarget, item: Any) -> None:
+    if not isinstance(item, dict):
+        return
+    account.remark = str(item.get("remark") or item.get("alias") or account.remark).strip()
+    account.nickname = str(item.get("nickname") or account.nickname).strip()
+
 PLUSPLUS_TOKEN = os.getenv("PLUSPLUS_TOKEN", "")
 PROXY_API = os.getenv("PROXY_API", "")
 PROXY_TYPE = os.getenv("PROXY_TYPE", "http").lower()
@@ -416,7 +423,9 @@ def send_pushplus(title: str, content: str) -> None:
         print(f"❌ [PushPlus] 推送失败: {exc}")
 
 
-def get_code(server: str, ref: str = "") -> str | None:
+def get_code(account: AccountTarget) -> str | None:
+    server = account.server
+    ref = account.ref
     if ref:
         url = server.rstrip("/") + "/wxapp/getCode"
         method = "POST"
@@ -434,6 +443,8 @@ def get_code(server: str, ref: str = "") -> str | None:
 
             if ref:
                 nested = data.get("data") if isinstance(data, dict) else None
+                if isinstance(nested, dict):
+                    apply_account_label(account, nested.get("account"))
                 if isinstance(nested, dict):
                     nested = nested.get("result") or nested.get("data") or nested
                 code = str(
@@ -2143,10 +2154,16 @@ def run_account(index: int, total: int, account: AccountTarget) -> Dict[str, Any
     print(f"⏳ [延迟] 启动延迟 {delay}s")
     sleep(delay)
 
-    code = get_code(server, account.ref)
+    code = get_code(account)
     if not code:
         result["error"] = "获取 code 失败"
         return result
+
+    result["accountLabel"] = account.label
+    result["remark"] = account.remark
+    result["nickname"] = account.nickname
+    if account.remark or account.nickname:
+        print(f"👤 [YYB] {account.label}")
 
     auth, raw_login = login_by_code(server, code, proxies)
     if not auth:

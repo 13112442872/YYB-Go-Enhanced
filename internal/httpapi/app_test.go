@@ -58,6 +58,14 @@ func TestHandlerServesGinRoutesAndSwaggerDocs(t *testing.T) {
 	if _, ok := spec["code"]; ok {
 		t.Fatalf("OpenAPI JSON should not be wrapped in API envelope")
 	}
+	components := spec["components"].(map[string]any)
+	schemas := components["schemas"].(map[string]any)
+	wxappResponse := schemas["WxappResponse"].(map[string]any)
+	wxappProperties := wxappResponse["properties"].(map[string]any)
+	accountRef := wxappProperties["account"].(map[string]any)["$ref"]
+	if accountRef != "#/components/schemas/WxappAccountLabel" {
+		t.Fatalf("OpenAPI WxappResponse account schema = %v", accountRef)
+	}
 	paths, ok := spec["paths"].(map[string]any)
 	if !ok {
 		t.Fatalf("OpenAPI paths missing or invalid")

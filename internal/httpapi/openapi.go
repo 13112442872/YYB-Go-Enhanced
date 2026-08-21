@@ -564,8 +564,15 @@ func newOpenAPISpec() map[string]any {
 					"app_id":  map[string]any{"type": "string"},
 					"payload": freeFormObjectSchema("完整的 operateWxData 请求 JSON。"),
 				}),
-				"WxappResponse": objectSchema([]string{"openid", "result"}, map[string]any{
+				"WxappAccountLabel": objectSchema([]string{"id"}, map[string]any{
+					"id":       int64Schema(),
+					"alias":    nullableStringSchema("账号别名。"),
+					"nickname": nullableStringSchema("账号昵称。"),
+					"remark":   nullableStringSchema("用户设置的账号备注。"),
+				}),
+				"WxappResponse": objectSchema([]string{"openid", "account", "result"}, map[string]any{
 					"openid": map[string]any{"type": "string"},
+					"account": refSchema("WxappAccountLabel"),
 					"result": freeFormObjectSchema("wxapp 接口返回结果。"),
 				}),
 				"QingLongStatus": objectSchema([]string{"configured", "connected"}, map[string]any{

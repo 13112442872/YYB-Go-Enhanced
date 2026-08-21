@@ -827,7 +827,16 @@ func (a *App) callWXApp(w http.ResponseWriter, r *http.Request, requirePayload b
 		}
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"openid": acc.OpenID, "result": result})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"openid": acc.OpenID,
+		"account": map[string]any{
+			"id":       acc.ID,
+			"alias":    acc.Alias,
+			"nickname": acc.Nickname,
+			"remark":   acc.Remark,
+		},
+		"result": result,
+	})
 }
 
 func decodeOptionalJSON(r *http.Request, dst any) error {
