@@ -228,6 +228,14 @@ func TestArcadiaBusinessError(t *testing.T) {
 	}
 }
 
+func TestArcadiaFileTimeUsesMilliseconds(t *testing.T) {
+	got := arcadiaFileTime("2026-08-20T01:02:03.123Z")
+	want := int64(1787187723123)
+	if got != want {
+		t.Fatalf("arcadiaFileTime() = %d, want %d", got, want)
+	}
+}
+
 func TestArcadiaExplicitTypeDoesNotAutoSwitch(t *testing.T) {
 	server := httptest.NewServer(http.NotFoundHandler())
 	defer server.Close()

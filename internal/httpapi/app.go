@@ -139,10 +139,17 @@ func NewApp(cfg Config) (*App, error) {
 		}
 		return fallback
 	}
-	cfg.QingLongType = loadSetting(qingLongTypeSetting, cfg.QingLongType)
-	cfg.QingLongURL = loadSetting(qingLongURLSetting, cfg.QingLongURL)
-	cfg.QingLongClientID = loadSetting(qingLongClientIDSetting, cfg.QingLongClientID)
-	cfg.QingLongSecret = loadSetting(qingLongSecretSetting, cfg.QingLongSecret)
+	cfg.QingLongType = normalizePanelType(loadSetting(qingLongTypeSetting, cfg.QingLongType))
+	loadPanelSetting := func(panelType, key, fallback string) string {
+		value, settingErr := db.GetSetting(context.Background(), panelSettingKey(panelType, key))
+		if settingErr == nil {
+			return value
+		}
+		return loadSetting(key, fallback)
+	}
+	cfg.QingLongURL = loadPanelSetting(cfg.QingLongType, qingLongURLSetting, cfg.QingLongURL)
+	cfg.QingLongClientID = loadPanelSetting(cfg.QingLongType, qingLongClientIDSetting, cfg.QingLongClientID)
+	cfg.QingLongSecret = loadPanelSetting(cfg.QingLongType, qingLongSecretSetting, cfg.QingLongSecret)
 	if normalizePanelType(cfg.QingLongType) == PanelTypeArcadia {
 		cfg.QingLongClientID = "api-token"
 	}

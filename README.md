@@ -178,6 +178,8 @@ YYB_KEEPALIVE_AHEAD=45m
   ```
   在 Arcadia 的 OpenAPI 令牌中启用 `env:query`、`env:manage`、`cron:query`、`cron:manage`、`cron:run`、`file:list` 和 `file:read` 权限。Arcadia 不持久化定时任务 stdout，YYB 创建的账号独立任务会将日志写入 `/arcadia/log/yyb_account_*`，再通过 File OpenAPI 回读；现有 Arcadia 任务不会被改写。
 
+三种面板的地址和凭据在控制台中按类型分别保存。切换面板类型只会切换当前运行面板，不会覆盖其他面板配置；Arcadia 账号独立任务的日志读取失败会直接显示面板返回的具体错误。
+
 升级前已经使用青龙的部署不需要迁移配置，原有 `QL_URL`、`QL_CLIENT_ID` 和 `QL_CLIENT_SECRET` 会继续生效。面板适配层会分别处理三种面板的任务启停、运行状态与日志接口，避免混用不同的状态字段。
 
 扫码成功页和账号控制台都提供“添加/同步到面板”按钮。同步会保留 `YYB_SERVER` 中已有的多行内容和环境变量备注，只追加缺少的账号，并同时识别账号 ID 与 OpenID，避免重复添加。

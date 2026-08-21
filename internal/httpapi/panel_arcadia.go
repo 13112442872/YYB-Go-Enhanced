@@ -397,7 +397,7 @@ func (d *arcadiaDriver) ListLogs(ctx context.Context) ([]qingLongLogEntry, error
 		}
 		files, err := d.listLogFiles(ctx, entry.Name)
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("读取 Arcadia 日志目录 %s 失败: %w", entry.Name, err)
 		}
 		children := make([]qingLongLogEntry, 0, len(files))
 		for _, file := range files {
@@ -416,7 +416,8 @@ func arcadiaFileTime(value string) int64 {
 	if err != nil {
 		return 0
 	}
-	return parsed.Unix()
+	// qingLongLogEntry.CreateTime uses milliseconds for all panel drivers.
+	return parsed.UnixMilli()
 }
 
 func (d *arcadiaDriver) LogDetail(ctx context.Context, dir, filename string) (string, error) {

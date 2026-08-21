@@ -884,9 +884,10 @@
             <details class="integration" id="qingLongSettings">
               <summary id="panelSettingsSummary">面板连接设置（青龙 / 呆呆 / Arcadia）</summary>
               <div class="form-grid">
+                <p class="field-note" style="grid-column:1/-1">三种面板配置分别保存。切换类型可编辑对应连接，保存后该面板作为当前运行面板。</p>
                 <div class="field">
                   <label for="qingLongType">面板类型</label>
-                  <select class="input" id="qingLongType" onchange="updatePanelLabels()">
+                    <select class="input" id="qingLongType" onchange="updatePanelLabels(); loadQingLongConfig(true)">
                     <option value="qinglong">青龙面板 (Qinglong)</option>
                     <option value="daidai">呆呆面板 (daidai-panel)</option>
                     <option value="arcadia">Arcadia</option>
@@ -1235,10 +1236,11 @@
       }
     }
 
-    async function loadQingLongConfig() {
+    async function loadQingLongConfig(selectedType = false) {
       try {
-        const config = await api("GET", "/api/qinglong/config");
-        $("qingLongType").value = config.type || "qinglong";
+        const endpoint = selectedType ? `/api/qinglong/config?type=${encodeURIComponent($("qingLongType").value || "qinglong")}` : "/api/qinglong/config";
+        const config = await api("GET", endpoint);
+        if (!selectedType) $("qingLongType").value = config.type || "qinglong";
         updatePanelLabels();
         $("qingLongURL").value = config.url || "";
         $("qingLongClientID").value = config.client_id || "";
@@ -1362,7 +1364,7 @@
       const button = $("clearQingLongBtn");
       button.disabled = true;
       try {
-        await api("PUT", "/api/qinglong/config", { clear: true });
+        await api("PUT", "/api/qinglong/config", { type: $("qingLongType").value, clear: true });
         await loadQingLongConfig();
         setActivity("面板连接配置已清除");
       } catch (error) {

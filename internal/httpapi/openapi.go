@@ -582,11 +582,13 @@ func newOpenAPISpec() map[string]any {
 				}),
 				"QingLongConfig": objectSchema([]string{"url", "client_id", "secret_configured", "configured"}, map[string]any{
 					"type":              map[string]any{"type": "string", "enum": []string{"qinglong", "daidai", "arcadia"}},
+					"active_type":       map[string]any{"type": "string", "enum": []string{"qinglong", "daidai", "arcadia"}},
 					"url":               map[string]any{"type": "string"},
 					"client_id":         map[string]any{"type": "string"},
 					"secret_configured": map[string]any{"type": "boolean"},
 					"configured":        map[string]any{"type": "boolean"},
 					"connected":         map[string]any{"type": "boolean"},
+					"profiles":          freeFormObjectSchema("按面板类型返回已保存的非敏感连接信息。"),
 				}),
 				"QingLongConfigRequest": objectSchema(nil, map[string]any{
 					"type":          map[string]any{"type": "string", "enum": []string{"qinglong", "daidai", "arcadia"}, "default": "qinglong"},

@@ -31,6 +31,12 @@ type qingLongConfigIn struct {
 	Clear        bool   `json:"clear"`
 }
 
+// Panel credentials are kept separately for each driver. The legacy keys are
+// still written and read as a migration path for existing installations.
+func panelSettingKey(panelType, key string) string {
+	return "panel_" + normalizePanelType(panelType) + "_" + key
+}
+
 type qingLongSyncIn struct {
 	Ref string `json:"ref"`
 }
@@ -92,13 +98,30 @@ func (a *App) handleAccountRemark(w http.ResponseWriter, r *http.Request) {
 func (a *App) handleQingLongConfig(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		pType, baseURL, clientID, secret := a.qinglong.configuration()
+		activeType, _, _, _ := a.qinglong.configuration()
+		pType := normalizePanelType(r.URL.Query().Get("type"))
+		if strings.TrimSpace(r.URL.Query().Get("type")) == "" {
+			pType = activeType
+		}
+		baseURL, clientID, secret := a.panelConfigValues(r.Context(), pType)
+		profileConfigured := strings.TrimSpace(baseURL) != "" && strings.TrimSpace(secret) != ""
+		profiles := make(map[string]map[string]any, 3)
+		for _, candidate := range []string{PanelTypeQingLong, PanelTypeDaidai, PanelTypeArcadia} {
+			urlValue, idValue, secretValue := a.panelConfigValues(r.Context(), candidate)
+			profiles[candidate] = map[string]any{
+				"url": urlValue, "client_id": idValue,
+				"secret_configured": strings.TrimSpace(secretValue) != "",
+				"configured": strings.TrimSpace(urlValue) != "" && strings.TrimSpace(secretValue) != "",
+			}
+		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"type":              pType,
+			"active_type":       activeType,
 			"url":               baseURL,
 			"client_id":         clientID,
 			"secret_configured": strings.TrimSpace(secret) != "",
-			"configured":        a.qinglong.configured(),
+			"configured":        profileConfigured,
+			"profiles":          profiles,
 		})
 	case http.MethodPut:
 		var body qingLongConfigIn
@@ -107,12 +130,25 @@ func (a *App) handleQingLongConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if body.Clear {
-			if err := a.persistQingLongConfig(r.Context(), PanelTypeQingLong, "", "", ""); err != nil {
-				writeError(w, http.StatusInternalServerError, err.Error())
+			pType, _, _, _ := a.qinglong.configuration()
+			if strings.TrimSpace(body.Type) != "" {
+				pType = normalizePanelType(body.Type)
+			}
+			activeType, _, _, _ := a.qinglong.configuration()
+			var persistErr error
+			if activeType == pType {
+				persistErr = a.persistQingLongConfig(r.Context(), pType, "", "", "")
+			} else {
+				persistErr = a.persistPanelProfile(r.Context(), pType, "", "", "")
+			}
+			if persistErr != nil {
+				writeError(w, http.StatusInternalServerError, persistErr.Error())
 				return
 			}
-			a.qinglong.reconfigure(PanelTypeQingLong, "", "", "")
-			writeJSON(w, http.StatusOK, map[string]any{"configured": false, "connected": false})
+			if activeType == pType {
+				a.qinglong.reconfigure(PanelTypeQingLong, "", "", "")
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"type": pType, "configured": false, "connected": false})
 			return
 		}
 		pType := strings.ToLower(strings.TrimSpace(body.Type))
@@ -122,10 +158,9 @@ func (a *App) handleQingLongConfig(w http.ResponseWriter, r *http.Request) {
 		if pType == PanelTypeArcadia {
 			clientID = "api-token"
 		}
-		currentType, _, _, currentSecret := a.qinglong.configuration()
 		secret := strings.TrimSpace(body.ClientSecret)
-		if secret == "" && currentType == pType {
-			secret = currentSecret
+		if secret == "" {
+			_, _, secret = a.panelConfigValues(r.Context(), pType)
 		}
 		if err := validatePanelConfig(pType, baseURL, clientID, secret); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
@@ -159,17 +194,56 @@ func (a *App) handleQingLongConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) persistQingLongConfig(ctx context.Context, pType, baseURL, clientID, secret string) error {
-	for key, value := range map[string]string{
+	if err := a.persistPanelProfile(ctx, pType, baseURL, clientID, secret); err != nil {
+		return err
+	}
+	values := map[string]string{
 		qingLongTypeSetting:     pType,
 		qingLongURLSetting:      baseURL,
 		qingLongClientIDSetting: clientID,
 		qingLongSecretSetting:   secret,
+	}
+	for key, value := range values {
+		if err := a.db.SetSetting(ctx, key, value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (a *App) persistPanelProfile(ctx context.Context, pType, baseURL, clientID, secret string) error {
+	for key, value := range map[string]string{
+		panelSettingKey(pType, qingLongURLSetting):      baseURL,
+		panelSettingKey(pType, qingLongClientIDSetting): clientID,
+		panelSettingKey(pType, qingLongSecretSetting):   secret,
 	} {
 		if err := a.db.SetSetting(ctx, key, value); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (a *App) panelConfigValues(ctx context.Context, panelType string) (string, string, string) {
+	pType := normalizePanelType(panelType)
+	load := func(key string) string {
+		value, err := a.db.GetSetting(ctx, panelSettingKey(pType, key))
+		if err == nil {
+			return value
+		}
+		// Before per-type settings existed, the active configuration lived in
+		// the legacy keys. Only use those as a fallback for the active driver.
+		activeType, _, _, _ := a.qinglong.configuration()
+		if activeType == pType {
+			value, _ = a.db.GetSetting(ctx, key)
+		}
+		return value
+	}
+	clientID := load(qingLongClientIDSetting)
+	if pType == PanelTypeArcadia {
+		clientID = "api-token"
+	}
+	return load(qingLongURLSetting), clientID, load(qingLongSecretSetting)
 }
 
 func validatePanelConfig(panelType, baseURL, clientID, secret string) error {
