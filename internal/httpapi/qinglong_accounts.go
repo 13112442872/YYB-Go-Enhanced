@@ -217,6 +217,57 @@ func (a *App) handleQingLongSync(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleQingLongSyncAll reconciles every locally stored account into the
+// shared YYB_SERVER variable. It deliberately does not renumber database
+// primary keys: those IDs are referenced by sessions, proxies and managed
+// cron jobs. The UI uses a separate compact display number instead.
+func (a *App) handleQingLongSyncAll(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if !a.qinglong.configured() {
+		writeError(w, http.StatusConflict, "请先配置面板 OpenAPI")
+		return
+	}
+	accounts, err := a.db.ListAccounts(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	envs, err := a.qinglong.listEnvs(r.Context(), "YYB_SERVER")
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	currentValue, remarks := "", "YYB Go 账号列表"
+	for _, env := range envs {
+		if env.Name == "YYB_SERVER" {
+			currentValue = env.Value
+			if strings.TrimSpace(env.Remarks) != "" {
+				remarks = env.Remarks
+			}
+			break
+		}
+	}
+	value := currentValue
+	added := 0
+	for _, acc := range accounts {
+		var changed bool
+		value, changed = mergeYYBServerValue(value, a.cfg.QingLongServer, acc)
+		if changed {
+			added++
+		}
+	}
+	if err := a.qinglong.upsertEnv(r.Context(), "YYB_SERVER", value, remarks); err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"name": "YYB_SERVER", "value": value, "accounts": len(accounts), "added": added,
+	})
+}
+
 func (a *App) syncAccountToQingLong(ctx context.Context, acc *store.WechatAccount) (string, bool, error) {
 	envs, err := a.qinglong.listEnvs(ctx, "YYB_SERVER")
 	if err != nil {

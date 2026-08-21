@@ -133,6 +133,9 @@ func (a *App) handleQuickLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := a.saveNewAccountProxy(r.Context(), account.ID, existed, session.ProxyIn, session.ProxySpec); err != nil {
+		if !existed {
+			_ = a.db.DeleteAccount(r.Context(), account.ID)
+		}
 		writeError(w, http.StatusInternalServerError, "保存账号代理失败: "+err.Error())
 		return
 	}

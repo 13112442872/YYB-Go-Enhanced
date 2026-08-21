@@ -291,6 +291,7 @@ func (a *App) Handler() http.Handler {
 	router.Any("/api/qinglong/status", gin.WrapF(a.handleQingLongStatus))
 	router.Any("/api/qinglong/config", gin.WrapF(a.handleQingLongConfig))
 	router.Any("/api/qinglong/sync", gin.WrapF(a.handleQingLongSync))
+	router.Any("/api/qinglong/sync-all", gin.WrapF(a.handleQingLongSyncAll))
 	router.Any("/api/qinglong/jobs", gin.WrapF(a.handleQingLongJobs))
 	router.Any("/api/qinglong/jobs/enable", gin.WrapF(a.handleQingLongJobEnable))
 	router.Any("/api/qinglong/jobs/run", gin.WrapF(a.handleQingLongJobRun))
@@ -488,6 +489,10 @@ func (a *App) handleQR(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := a.saveNewAccountProxy(r.Context(), acc.ID, existed, login.ProxyIn, login.ProxySpec); err != nil {
+			if !existed {
+				// Do not leave a phantom account when the optional proxy save fails.
+				_ = a.db.DeleteAccount(r.Context(), acc.ID)
+			}
 			writeError(w, http.StatusInternalServerError, "保存账号代理失败: "+err.Error())
 			return
 		}

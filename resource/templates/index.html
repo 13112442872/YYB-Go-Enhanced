@@ -759,6 +759,7 @@
           <div class="inline-actions">
             <button class="btn" id="refreshAllBtn" type="button">刷新存活</button>
             <button class="btn" id="resyncAllBtn" type="button">同步资料</button>
+            <button class="btn" id="syncAllQingLongBtn" type="button">同步全部账号到青龙</button>
           </div>
         </aside>
       </section>
@@ -767,7 +768,7 @@
         <div class="section-head">
           <div class="section-title">
             <h3>账号队列</h3>
-            <p>点击账号后，下方调用面板会使用该账号</p>
+            <p>显示序号连续；内部 ID 保持不变，避免代理、会话和专属任务错绑</p>
           </div>
           <div class="panel-actions">
             <button class="btn secondary" id="reloadAccountsBtn" type="button">重新加载</button>
@@ -983,6 +984,11 @@
       return account.remark || account.nickname || account.alias || account.openid || "未命名账号";
     }
 
+    function accountNumber(account) {
+      const index = state.accounts.findIndex(item => item.openid === account?.openid);
+      return index >= 0 ? index + 1 : "-";
+    }
+
     function statusText(status) {
       if (status === "alive") return "可用";
       if (status === "expired") return "需重扫";
@@ -1034,6 +1040,7 @@
       $("accountRemarkInput").disabled = !selected;
       $("saveRemarkBtn").disabled = !selected;
       $("syncQingLongBtn").disabled = !selected;
+      $("syncAllQingLongBtn").disabled = state.accounts.length === 0;
       $("deleteAccountBtn").disabled = !selected;
       $("proxySettingsLink").href = selected ? `/proxies?ref=${encodeURIComponent(selected.id)}` : "/proxies";
       document.querySelectorAll(".account-card").forEach(card => {
@@ -1074,7 +1081,8 @@
         button.className = "account-card";
         button.dataset.openid = account.openid;
         button.setAttribute("aria-pressed", "false");
-        button.setAttribute("aria-label", `选择账号 ${name}，ID ${account.id}`);
+        const number = accountNumber(account);
+        button.setAttribute("aria-label", `选择账号 ${number}，${name}`);
         button.innerHTML = `
           <span class="avatar">
             <img alt="" src="/accounts/avatar?ref=${encodeURIComponent(account.openid)}">
@@ -1085,7 +1093,7 @@
               <span class="account-name">${escapeHTML(name)}</span>
               <span class="account-status ${cls}" title="${account.rescan_recommended ? "RefreshToken 已使用约 25 天，建议在失效前重新扫码" : ""}"><span class="status-dot"></span>${status}</span>
             </span>
-			<span class="account-meta" title="ID: ${escapeHTML(account.id)} · UIN: ${escapeHTML(account.uin ?? "-")} · ${escapeHTML(proxy)} · ${formatChecked(account.last_checked_at)}">ID: ${escapeHTML(account.id)} · ${escapeHTML(proxy)} · ${formatChecked(account.last_checked_at)}</span>
+            <span class="account-meta" title="显示序号 ${number} · 内部 ID: ${escapeHTML(account.id)} · UIN: ${escapeHTML(account.uin ?? "-")} · ${escapeHTML(proxy)} · ${formatChecked(account.last_checked_at)}">账号 ${number} · ${escapeHTML(proxy)} · ${formatChecked(account.last_checked_at)}</span>
             <span class="account-openid" title="OpenID: ${escapeHTML(account.openid)}">OpenID: ${escapeHTML(account.openid)}</span>
           </span>
         `;
@@ -1273,12 +1281,30 @@
         const result = await api("POST", "/api/qinglong/sync", { ref: String(account.id) });
         renderAccounts();
         const panelName = $("qingLongType").value === "daidai" ? "呆呆面板" : $("qingLongType").value === "arcadia" ? "Arcadia" : "青龙";
-        setActivity(result.added ? `账号 ${account.id} 已添加到${panelName} YYB_SERVER` : `${panelName} YYB_SERVER 已包含账号 ${account.id}`);
+        const number = accountNumber(account);
+        setActivity(result.added ? `账号 ${number} 已添加到${panelName} YYB_SERVER` : `${panelName} YYB_SERVER 已包含账号 ${number}`);
       } catch (error) {
         setActivity(`同步面板失败：${error.message}`);
         if (error.message.includes("配置")) $("qingLongSettings").open = true;
       } finally {
         button.disabled = false;
+      }
+    }
+
+    async function syncAllQingLong() {
+      if (!state.accounts.length) return;
+      const button = $("syncAllQingLongBtn");
+      button.disabled = true;
+      button.textContent = "同步中";
+      try {
+        const result = await api("POST", "/api/qinglong/sync-all");
+        const panelName = $("qingLongType").value === "daidai" ? "呆呆面板" : $("qingLongType").value === "arcadia" ? "Arcadia" : "青龙";
+        setActivity(`${panelName} YYB_SERVER 已校验 ${result.accounts} 个账号，新增 ${result.added} 条`);
+      } catch (error) {
+        setActivity(`批量同步面板失败：${error.message}`);
+      } finally {
+        button.disabled = state.accounts.length === 0;
+        button.textContent = "同步全部账号到青龙";
       }
     }
 
@@ -1450,6 +1476,7 @@
     $("reloadAccountsBtn").addEventListener("click", loadAccounts);
     $("refreshAllBtn").addEventListener("click", refreshAll);
     $("resyncAllBtn").addEventListener("click", resyncAll);
+    $("syncAllQingLongBtn").addEventListener("click", syncAllQingLong);
     $("saveRemarkBtn").addEventListener("click", saveRemark);
     $("syncQingLongBtn").addEventListener("click", syncQingLong);
     $("deleteAccountBtn").addEventListener("click", deleteAccount);
