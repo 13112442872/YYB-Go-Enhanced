@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>运行管理 - YYB Go</title>
-  <link rel="stylesheet" href="/static/css/platform.css?v=20260823-platform-nav">
+  <link rel="stylesheet" href="/static/css/platform.css?v=20260823-platform-nav2">
   <style>
     :root {
       color-scheme: light;
@@ -129,7 +129,7 @@
   </dialog>
   <div class="toast" id="toast" hidden role="status"></div>
   <script>
-    const state = { accounts: [], selectedRef: "", jobs: [], runs: [], mode: "tasks", taskView: "configured", busy: new Set(), pendingRun: null, openLogKey: "", logText: "", logLoading: false, runsRequestPending: false, logRequestPending: false, timer: null };
+    const state = { accounts: [], selectedRef: "", jobs: [], runs: [], mode: new URLSearchParams(location.search).get("view") === "logs" ? "runs" : "tasks", taskView: "configured", busy: new Set(), pendingRun: null, openLogKey: "", logText: "", logLoading: false, runsRequestPending: false, logRequestPending: false, timer: null };
     const $ = id => document.getElementById(id);
     function escapeHTML(value) { return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;"); }
     async function api(method, url, body) { const options = { method, headers: { "Content-Type": "application/json" } }; if (body !== undefined) options.body = JSON.stringify(body); const response = await fetch(url, options); const text = await response.text(); let payload = null; try { payload = text ? JSON.parse(text) : null; } catch { throw new Error(`服务返回了非 JSON 内容（HTTP ${response.status}）`); } if (!payload) throw new Error(`服务返回空响应（HTTP ${response.status}）`); const envelope = typeof payload === "object" && !Array.isArray(payload) && "code" in payload; if (!response.ok || (envelope && payload.code !== 0)) throw new Error(envelope ? (payload.msg || `请求失败（HTTP ${response.status}）`) : `HTTP ${response.status}`); return envelope ? payload.data : payload; }
@@ -173,8 +173,8 @@
     $("closeLogDrawer").onclick = () => $("logDrawer").close(); $("logDrawer").addEventListener("close", () => { state.openLogKey = ""; state.logText = ""; state.logLoading = false; }); $("refreshLogBtn").onclick = () => refreshOpenLog();
     $("taskSearchInput").addEventListener("input", renderJobs); $("clearTaskSearchBtn").addEventListener("click", () => { $("taskSearchInput").value = ""; $("taskSearchInput").focus(); renderJobs(); }); $("browseBtn").addEventListener("click", () => setTaskView("all", true));
     $("runSearchInput").addEventListener("input", renderRuns); $("clearRunSearchBtn").addEventListener("click", () => { $("runSearchInput").value = ""; $("runSearchInput").focus(); renderRuns(); }); $("refreshRunsBtn").addEventListener("click", async () => { await loadRuns(); await refreshOpenLog(); }); $("backToTasksBtn").addEventListener("click", () => setMode("tasks"));
-    (async function init() { try { await Promise.all([loadConnection(), loadAccounts()]); await loadSelected(); } catch (error) { showToast(error.message, true); } state.timer = setInterval(async () => { await loadJobsOnly(); if (state.mode === "runs") { await loadRuns(true); await refreshOpenLog(true); } }, 3000); })();
+    (async function init() { try { await Promise.all([loadConnection(), loadAccounts()]); await loadSelected(); setMode(state.mode); } catch (error) { showToast(error.message, true); } state.timer = setInterval(async () => { await loadJobsOnly(); if (state.mode === "runs") { await loadRuns(true); await refreshOpenLog(true); } }, 3000); })();
   </script>
-  <script src="/static/js/platform.js?v=20260822-platform-user-scope"></script>
+  <script src="/static/js/platform.js?v=20260823-platform-nav2"></script>
 </body>
 </html>

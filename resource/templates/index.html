@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>工作台 - YYB Go</title>
-  <link rel="stylesheet" href="/static/css/platform.css?v=20260823-platform-nav">
+  <link rel="stylesheet" href="/static/css/platform.css?v=20260823-platform-nav2">
   <style>
     :root {
       color-scheme: light;
@@ -751,6 +751,8 @@
             <span class="stat-chip">账号 <strong id="accountCount">0</strong></span>
             <span class="stat-chip">可用 <strong id="aliveCount">0</strong></span>
             <span class="stat-chip">能力 <strong id="featureCount">0</strong></span>
+            <span class="stat-chip">权限 <strong id="currentRoleText">读取中</strong></span>
+            <span class="stat-chip">调用额度 <strong id="currentQuotaText">无限制</strong></span>
             <span class="stat-chip">当前 <strong id="currentAccountText">未选择</strong></span>
           </div>
         </div>
@@ -764,7 +766,7 @@
         </aside>
       </section>
 
-      <section class="account-band" aria-label="账号队列">
+      <section class="account-band" id="accountWorkspace" aria-label="账号队列">
         <div class="section-head">
           <div class="section-title">
             <h3>账号队列</h3>
@@ -780,7 +782,7 @@
         </div>
       </section>
 
-      <section class="work-grid" aria-label="调用工作区">
+      <section class="work-grid" id="callWorkspace" aria-label="调用工作区">
         <section class="panel" aria-label="调用配置">
           <div class="section-head">
             <div class="section-title">
@@ -1496,12 +1498,17 @@
       }
     });
 
+    const focusTarget = new URLSearchParams(location.search).get("focus");
+    if (focusTarget === "accounts" || focusTarget === "test") {
+      requestAnimationFrame(() => document.getElementById(focusTarget === "accounts" ? "accountWorkspace" : "callWorkspace")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    }
+
     loadHealth();
     loadFeatures();
     loadAccounts();
     loadQingLongConfig();
     setInterval(loadHealth, 15000);
   </script>
-  <script src="/static/js/platform.js?v=20260822-platform-user-scope"></script>
+  <script src="/static/js/platform.js?v=20260823-platform-nav2"></script>
 </body>
 </html>
