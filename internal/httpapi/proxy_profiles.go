@@ -68,6 +68,9 @@ func (a *App) handleProxyProfiles(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleProxyProfileCollection(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && a.auth != nil && !requireAdmin(w, r) {
+		return
+	}
 	switch r.Method {
 	case http.MethodGet:
 		profiles, err := a.db.ListProxyProviderProfiles(r.Context())
@@ -93,6 +96,9 @@ func (a *App) handleProxyProfileCollection(w http.ResponseWriter, r *http.Reques
 }
 
 func (a *App) handleProxyProfileItem(w http.ResponseWriter, r *http.Request, id int64) {
+	if a.auth != nil && !requireAdmin(w, r) {
+		return
+	}
 	switch r.Method {
 	case http.MethodPut:
 		body, ok := decodeProxyProfile(w, r)

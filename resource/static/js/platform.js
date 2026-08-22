@@ -11,22 +11,32 @@
   const main = document.querySelector("main");
   if (!main) return;
 
+  const icons = {
+    dashboard: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>',
+    scan: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v8M8 12h8"/></svg>',
+    proxy: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/><circle cx="8" cy="7" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="10" cy="17" r="2"/></svg>',
+    runs: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/><path d="M4 5v14"/></svg>',
+    users: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3 20c.6-3.1 2.6-5 6-5s5.4 1.9 6 5"/><path d="M16 5.5a3 3 0 0 1 0 5.8M17 15c2 .5 3.3 2.1 4 5"/></svg>',
+    settings: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4"/><circle cx="12" cy="12" r="4"/></svg>',
+    docs: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l3 3v15H6z"/><path d="M9 11h6M9 15h6M9 7h3"/></svg>',
+    logout: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 5H5v14h5M14 8l4 4-4 4M9 12h9"/></svg>'
+  };
   const nav = [
-    ["/", "台", "工作台", true, false],
-    ["/scan", "+", "添加账号", true, false],
-    ["/proxies", "网", "代理设置", true, false],
-    ["/runs", "运", "运行管理", true, false],
-    ["/users", "人", "用户管理", false, true],
-    ["/settings", "设", "个人设置", true, true],
-    ["/docs/index.html", "API", "接口文档", true, false]
+    ["/", "dashboard", "工作台", true, false],
+    ["/scan", "scan", "添加账号", true, false],
+    ["/proxies", "proxy", "代理设置", true, false],
+    ["/runs", "runs", "运行管理", true, false],
+    ["/users", "users", "用户管理", false, true],
+    ["/settings", "settings", "个人设置", true, true],
+    ["/docs/index.html", "docs", "接口文档", true, false]
   ];
   const shell = document.createElement("div");
   shell.className = "platform-shell";
   shell.innerHTML = `
     <aside class="platform-sidebar" aria-label="主导航">
       <a class="platform-brand" href="/"><span class="platform-brand-mark">Y</span><span class="platform-brand-copy"><strong>YYB Go</strong><span>微信协议管理平台</span></span></a>
-      <nav class="platform-nav"><div class="platform-nav-group">平台功能</div>${nav.map(([href, icon, label, visible, authOnly]) => `<a href="${href}" data-admin-only="${!visible}" data-auth-only="${authOnly}" ${location.pathname === href ? 'aria-current="page"' : ""}><span class="platform-nav-icon">${icon}</span><span>${label}</span></a>`).join("")}</nav>
-      <div class="platform-sidebar-foot"><button type="button" id="platformLogout"><span class="platform-nav-icon">退</span><span>退出登录</span></button></div>
+      <nav class="platform-nav"><div class="platform-nav-group">平台</div>${nav.map(([href, icon, label, visible, authOnly]) => `<a href="${href}" data-label="${label}" data-admin-only="${!visible}" data-auth-only="${authOnly}" ${location.pathname === href ? 'aria-current="page"' : ""}><span class="platform-nav-icon">${icons[icon]}</span><span class="platform-nav-label">${label}</span></a>`).join("")}</nav>
+      <div class="platform-sidebar-foot"><button type="button" id="platformLogout" data-label="退出登录"><span class="platform-nav-icon">${icons.logout}</span><span class="platform-nav-label">退出登录</span></button></div>
     </aside>
     <button class="platform-overlay" id="platformOverlay" type="button" aria-label="关闭导航"></button>
     <section class="platform-stage">

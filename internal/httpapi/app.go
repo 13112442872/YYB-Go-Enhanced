@@ -274,7 +274,6 @@ func (a *App) Handler() http.Handler {
 	router.Any("/api/auth/users", gin.WrapF(a.handleUsers))
 	router.Any("/api/auth/users/*path", gin.WrapF(a.handleUserAction))
 	router.Any("/api/auth/registration", gin.WrapF(a.handleRegistrationSetting))
-	router.Use(a.requireAdminSession())
 	router.Any("/", gin.WrapF(a.handleIndex))
 	router.Any("/scan", gin.WrapF(a.handleScan))
 	router.Any("/proxies", gin.WrapF(a.handleProxiesPage))
@@ -491,9 +490,17 @@ func (a *App) handleQR(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
+		if err := a.ensureScannedAccountAllowed(r, result.Credentials.OpenID); err != nil {
+			writeError(w, http.StatusForbidden, err.Error())
+			return
+		}
 		acc, err := a.storeFromScan(r.Context(), result.LoginBuffer, result.Credentials, userInfo)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if err := a.claimScannedAccount(r, acc.ID); err != nil {
+			writeError(w, http.StatusForbidden, err.Error())
 			return
 		}
 		if err := a.saveNewAccountProxy(r.Context(), acc.ID, existed, login.ProxyIn, login.ProxySpec); err != nil {
@@ -518,7 +525,7 @@ func (a *App) handleAccountsRoot(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodGet:
-		accounts, err := a.db.ListAccounts(r.Context())
+		accounts, err := a.visibleAccounts(r)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
@@ -894,11 +901,66 @@ func (a *App) resolveAccountRef(w http.ResponseWriter, r *http.Request, ref stri
 		}
 		return nil, false
 	}
+	if !a.accountVisible(r, acc.ID) {
+		writeError(w, http.StatusNotFound, "账号不存在")
+		return nil, false
+	}
 	return acc, true
 }
 
-func (a *App) refreshAll(w http.ResponseWriter, r *http.Request) {
+func (a *App) browserUser(r *http.Request) *auth.User {
+	user, _ := currentAuth(r)
+	if user != nil || a.auth == nil {
+		return user
+	}
+	cookie, err := r.Cookie(sessionCookie)
+	if err != nil || cookie.Value == "" {
+		return nil
+	}
+	user, _, err = a.auth.UserBySession(r.Context(), cookie.Value)
+	if err != nil {
+		return nil
+	}
+	return user
+}
+
+func (a *App) accountVisible(r *http.Request, accountID int64) bool {
+	user := a.browserUser(r)
+	if a.auth == nil || user == nil || user.Role == "admin" {
+		return true
+	}
+	owner, err := a.auth.AccountOwner(r.Context(), accountID)
+	return err == nil && owner == user.ID
+}
+
+func (a *App) visibleAccounts(r *http.Request) ([]*store.WechatAccount, error) {
 	accounts, err := a.db.ListAccounts(r.Context())
+	if err != nil || a.auth == nil {
+		return accounts, err
+	}
+	user := a.browserUser(r)
+	if user == nil || user.Role == "admin" {
+		return accounts, nil
+	}
+	return a.accountsOwnedBy(r.Context(), user.ID, accounts)
+}
+
+func (a *App) accountsOwnedBy(ctx context.Context, userID int64, accounts []*store.WechatAccount) ([]*store.WechatAccount, error) {
+	owned, err := a.auth.AccountIDs(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	visible := make([]*store.WechatAccount, 0, len(accounts))
+	for _, account := range accounts {
+		if _, ok := owned[account.ID]; ok {
+			visible = append(visible, account)
+		}
+	}
+	return visible, nil
+}
+
+func (a *App) refreshAll(w http.ResponseWriter, r *http.Request) {
+	accounts, err := a.visibleAccounts(r)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -911,8 +973,48 @@ func (a *App) refreshAll(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+func (a *App) claimScannedAccount(r *http.Request, accountID int64) error {
+	if a.auth == nil {
+		return nil
+	}
+	user := a.browserUser(r)
+	if user == nil || user.Role == "admin" {
+		return nil
+	}
+	owner, err := a.auth.AccountOwner(r.Context(), accountID)
+	if err == nil && owner != user.ID {
+		return errors.New("该 YYB 账号已属于其他用户")
+	}
+	return a.auth.ClaimAccount(r.Context(), accountID, user.ID)
+}
+
+func (a *App) ensureScannedAccountAllowed(r *http.Request, openID string) error {
+	if a.auth == nil {
+		return nil
+	}
+	user := a.browserUser(r)
+	if user == nil || user.Role == "admin" {
+		return nil
+	}
+	existing, err := a.db.GetAccountByOpenID(r.Context(), openID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	owner, ownerErr := a.auth.AccountOwner(r.Context(), existing.ID)
+	if ownerErr == nil && owner == user.ID {
+		return nil
+	}
+	if ownerErr != nil && errors.Is(ownerErr, sql.ErrNoRows) {
+		return errors.New("该账号已存在但尚未分配给普通用户，请联系管理员")
+	}
+	return errors.New("该 YYB 账号已属于其他用户")
+}
+
 func (a *App) resyncAll(w http.ResponseWriter, r *http.Request) {
-	accounts, err := a.db.ListAccounts(r.Context())
+	accounts, err := a.visibleAccounts(r)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

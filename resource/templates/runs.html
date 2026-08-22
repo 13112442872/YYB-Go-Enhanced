@@ -175,6 +175,6 @@
     $("runSearchInput").addEventListener("input", renderRuns); $("clearRunSearchBtn").addEventListener("click", () => { $("runSearchInput").value = ""; $("runSearchInput").focus(); renderRuns(); }); $("refreshRunsBtn").addEventListener("click", async () => { await loadRuns(); await refreshOpenLog(); }); $("backToTasksBtn").addEventListener("click", () => setMode("tasks"));
     (async function init() { try { await Promise.all([loadConnection(), loadAccounts()]); await loadSelected(); } catch (error) { showToast(error.message, true); } state.timer = setInterval(async () => { await loadJobsOnly(); if (state.mode === "runs") { await loadRuns(true); await refreshOpenLog(true); } }, 3000); })();
   </script>
-  <script src="/static/js/platform.js?v=20260817-proxy-page"></script>
+  <script src="/static/js/platform.js?v=20260822-platform-user-scope"></script>
 </body>
 </html>

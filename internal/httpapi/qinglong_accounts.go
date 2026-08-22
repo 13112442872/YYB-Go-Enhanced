@@ -96,6 +96,21 @@ func (a *App) handleAccountRemark(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleQingLongConfig(w http.ResponseWriter, r *http.Request) {
+	if a.auth != nil {
+		user := a.browserUser(r)
+		if user == nil || user.Role != "admin" {
+			if r.Method != http.MethodGet {
+				requireAdmin(w, r)
+				return
+			}
+			activeType, _, _, _ := a.qinglong.configuration()
+			writeJSON(w, http.StatusOK, map[string]any{
+				"type": activeType, "active_type": activeType,
+				"configured": a.qinglong.configured(), "restricted": true,
+			})
+			return
+		}
+	}
 	switch r.Method {
 	case http.MethodGet:
 		activeType, _, _, _ := a.qinglong.configuration()
@@ -111,7 +126,7 @@ func (a *App) handleQingLongConfig(w http.ResponseWriter, r *http.Request) {
 			profiles[candidate] = map[string]any{
 				"url": urlValue, "client_id": idValue,
 				"secret_configured": strings.TrimSpace(secretValue) != "",
-				"configured": strings.TrimSpace(urlValue) != "" && strings.TrimSpace(secretValue) != "",
+				"configured":        strings.TrimSpace(urlValue) != "" && strings.TrimSpace(secretValue) != "",
 			}
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
@@ -264,6 +279,9 @@ func validatePanelConfig(panelType, baseURL, clientID, secret string) error {
 }
 
 func (a *App) handleQingLongSync(w http.ResponseWriter, r *http.Request) {
+	if a.auth != nil && !requireAdmin(w, r) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
@@ -296,6 +314,9 @@ func (a *App) handleQingLongSync(w http.ResponseWriter, r *http.Request) {
 // primary keys: those IDs are referenced by sessions, proxies and managed
 // cron jobs. The UI uses a separate compact display number instead.
 func (a *App) handleQingLongSyncAll(w http.ResponseWriter, r *http.Request) {
+	if a.auth != nil && !requireAdmin(w, r) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return

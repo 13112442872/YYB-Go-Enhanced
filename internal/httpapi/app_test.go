@@ -1,9 +1,11 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -264,5 +266,135 @@ func TestSQLiteAuthFirstRegistrationAndUnauthorizedAPI(t *testing.T) {
 	handler.ServeHTTP(index, indexRequest)
 	if index.Code != http.StatusOK {
 		t.Fatalf("authenticated GET / status = %d", index.Code)
+	}
+}
+
+func TestSQLite普通用户CanUsePlatformPages(t *testing.T) {
+	t.Setenv("GIN_MODE", "test")
+	app, err := NewApp(Config{ResourceRoot: t.TempDir(), AuthDriver: "sqlite"})
+	if err != nil {
+		t.Fatalf("NewApp() error = %v", err)
+	}
+	defer app.Close()
+	handler := app.Handler()
+
+	register := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/register", strings.NewReader(`{"username":"admin","displayName":"Admin","password":"admin-password"}`))
+	req.Header.Set("Content-Type", "application/json")
+	handler.ServeHTTP(register, req)
+	if register.Code != http.StatusCreated {
+		t.Fatalf("register admin status = %d", register.Code)
+	}
+	adminCookie := register.Result().Cookies()[0]
+
+	create := httptest.NewRecorder()
+	createReq := httptest.NewRequest(http.MethodPost, "/api/auth/users", strings.NewReader(`{"username":"member","display_name":"Member","password":"member-password","role":"user"}`))
+	createReq.Header.Set("Content-Type", "application/json")
+	createReq.AddCookie(adminCookie)
+	handler.ServeHTTP(create, createReq)
+	if create.Code != http.StatusCreated {
+		t.Fatalf("create user status = %d body=%s", create.Code, create.Body.String())
+	}
+
+	login := httptest.NewRecorder()
+	loginReq := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(`{"username":"member","password":"member-password"}`))
+	loginReq.Header.Set("Content-Type", "application/json")
+	handler.ServeHTTP(login, loginReq)
+	if login.Code != http.StatusOK {
+		t.Fatalf("login member status = %d", login.Code)
+	}
+	memberCookie := login.Result().Cookies()[0]
+	for _, path := range []string{"/", "/scan", "/proxies", "/runs", "/accounts"} {
+		page := httptest.NewRecorder()
+		pageReq := httptest.NewRequest(http.MethodGet, path, nil)
+		pageReq.AddCookie(memberCookie)
+		handler.ServeHTTP(page, pageReq)
+		if page.Code != http.StatusOK {
+			t.Fatalf("普通用户 GET %s status = %d body=%s", path, page.Code, page.Body.String())
+		}
+	}
+}
+
+func TestSQLite普通用户账号隔离AndAdminCanInspectOwnership(t *testing.T) {
+	t.Setenv("GIN_MODE", "test")
+	app, err := NewApp(Config{ResourceRoot: t.TempDir(), AuthDriver: "sqlite"})
+	if err != nil {
+		t.Fatalf("NewApp() error = %v", err)
+	}
+	defer app.Close()
+	handler := app.Handler()
+
+	adminRegister := httptest.NewRecorder()
+	adminRequest := httptest.NewRequest(http.MethodPost, "/register", strings.NewReader(`{"username":"admin","displayName":"Admin","password":"admin-password"}`))
+	adminRequest.Header.Set("Content-Type", "application/json")
+	handler.ServeHTTP(adminRegister, adminRequest)
+	adminCookie := adminRegister.Result().Cookies()[0]
+
+	create := httptest.NewRecorder()
+	createRequest := httptest.NewRequest(http.MethodPost, "/api/auth/users", strings.NewReader(`{"username":"member","display_name":"Member","password":"member-password","role":"user"}`))
+	createRequest.Header.Set("Content-Type", "application/json")
+	createRequest.AddCookie(adminCookie)
+	handler.ServeHTTP(create, createRequest)
+	if create.Code != http.StatusCreated {
+		t.Fatalf("create user status = %d body=%s", create.Code, create.Body.String())
+	}
+	users, err := app.auth.ListUsers(context.Background())
+	if err != nil {
+		t.Fatalf("ListUsers() error = %v", err)
+	}
+	var memberID int64
+	for _, user := range users {
+		if user.Username == "member" {
+			memberID = user.ID
+		}
+	}
+	if memberID == 0 {
+		t.Fatal("member user not found")
+	}
+	status := "alive"
+	account, err := app.db.UpsertAccount(context.Background(), "member-openid", "buffer", nil, nil, nil, nil, nil, &status)
+	if err != nil {
+		t.Fatalf("UpsertAccount() error = %v", err)
+	}
+	if err := app.auth.ClaimAccount(context.Background(), account.ID, memberID); err != nil {
+		t.Fatalf("ClaimAccount() error = %v", err)
+	}
+
+	login := httptest.NewRecorder()
+	loginRequest := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(`{"username":"member","password":"member-password"}`))
+	loginRequest.Header.Set("Content-Type", "application/json")
+	handler.ServeHTTP(login, loginRequest)
+	memberCookie := login.Result().Cookies()[0]
+
+	accounts := httptest.NewRecorder()
+	accountsRequest := httptest.NewRequest(http.MethodGet, "/accounts", nil)
+	accountsRequest.AddCookie(memberCookie)
+	handler.ServeHTTP(accounts, accountsRequest)
+	if accounts.Code != http.StatusOK || !strings.Contains(accounts.Body.String(), "member-openid") {
+		t.Fatalf("member accounts = %d %s", accounts.Code, accounts.Body.String())
+	}
+
+	inspect := httptest.NewRecorder()
+	inspectRequest := httptest.NewRequest(http.MethodGet, "/api/auth/users/"+strconv.FormatInt(memberID, 10)+"/accounts", nil)
+	inspectRequest.AddCookie(adminCookie)
+	handler.ServeHTTP(inspect, inspectRequest)
+	if inspect.Code != http.StatusOK || !strings.Contains(inspect.Body.String(), "member-openid") {
+		t.Fatalf("admin account inspect = %d %s", inspect.Code, inspect.Body.String())
+	}
+
+	blocked := httptest.NewRecorder()
+	blockedRequest := httptest.NewRequest(http.MethodGet, "/api/auth/users", nil)
+	blockedRequest.AddCookie(memberCookie)
+	handler.ServeHTTP(blocked, blockedRequest)
+	if blocked.Code != http.StatusForbidden {
+		t.Fatalf("member user list status = %d", blocked.Code)
+	}
+
+	config := httptest.NewRecorder()
+	configRequest := httptest.NewRequest(http.MethodGet, "/api/qinglong/config", nil)
+	configRequest.AddCookie(memberCookie)
+	handler.ServeHTTP(config, configRequest)
+	if config.Code != http.StatusOK || !strings.Contains(config.Body.String(), `"restricted":true`) || strings.Contains(config.Body.String(), `"client_id"`) {
+		t.Fatalf("member panel config = %d %s", config.Code, config.Body.String())
 	}
 }

@@ -2,6 +2,8 @@ package httpapi
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"net"
 	"net/http"
 	"net/url"
@@ -12,6 +14,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"yyb_go/internal/auth"
+	"yyb_go/internal/store"
 )
 
 const sessionCookie = "yyb_session"
@@ -177,11 +180,7 @@ func (a *App) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	setSessionCookie(w, token, a.cfg.CookieSecure, a.cfg.SessionDuration)
-	next := "/settings"
-	if user.Role == "admin" {
-		next = "/"
-	}
-	writeJSON(w, 201, map[string]any{"user": user, "next": next})
+	writeJSON(w, 201, map[string]any{"user": user, "next": "/"})
 }
 
 func (a *App) handleLogout(w http.ResponseWriter, r *http.Request) {
@@ -321,7 +320,22 @@ func (a *App) handleUsers(w http.ResponseWriter, r *http.Request) {
 			writeError(w, 500, err.Error())
 			return
 		}
-		writeJSON(w, 200, users)
+		counts, countErr := a.auth.AccountCounts(r.Context())
+		if countErr != nil {
+			writeError(w, 500, countErr.Error())
+			return
+		}
+		out := make([]map[string]any, 0, len(users))
+		for _, user := range users {
+			out = append(out, map[string]any{
+				"id": user.ID, "username": user.Username, "display_name": user.DisplayName,
+				"role": user.Role, "enabled": user.Enabled, "last_login_at": user.LastLoginAt,
+				"created_at": user.CreatedAt, "updated_at": user.UpdatedAt,
+				"login_count": user.LoginCount, "account_count": counts[user.ID],
+				"points": map[string]any{"enabled": false, "label": "无限制"},
+			})
+		}
+		writeJSON(w, 200, out)
 		return
 	}
 	if r.Method == http.MethodPost {
@@ -361,6 +375,35 @@ func (a *App) handleUserAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch parts[1] {
+	case "accounts":
+		if r.Method != http.MethodGet {
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		if _, err := a.auth.GetUser(r.Context(), id); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				writeError(w, http.StatusNotFound, "用户不存在")
+			} else {
+				writeError(w, http.StatusInternalServerError, err.Error())
+			}
+			return
+		}
+		accounts, err := a.db.ListAccounts(r.Context())
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		accounts, err = a.accountsOwnedBy(r.Context(), id, accounts)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		out := make([]store.AccountPublic, 0, len(accounts))
+		for _, account := range accounts {
+			out = append(out, account.Public())
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"user_id": id, "accounts": out})
+		return
 	case "state":
 		var body struct {
 			Role    string `json:"role"`
@@ -441,7 +484,7 @@ func currentAuth(r *http.Request) (*auth.User, *auth.Session) {
 }
 func requireAdmin(w http.ResponseWriter, r *http.Request) bool {
 	user, _ := currentAuth(r)
-	if user.Role != "admin" {
+	if user == nil || user.Role != "admin" {
 		writeError(w, 403, "需要管理员权限")
 		return false
 	}

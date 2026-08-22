@@ -127,9 +127,17 @@ func (a *App) handleQuickLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	if err := a.ensureScannedAccountAllowed(r, result.Credentials.OpenID); err != nil {
+		writeError(w, http.StatusForbidden, err.Error())
+		return
+	}
 	account, err := a.storeFromScan(r.Context(), result.LoginBuffer, result.Credentials, userInfo)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := a.claimScannedAccount(r, account.ID); err != nil {
+		writeError(w, http.StatusForbidden, err.Error())
 		return
 	}
 	if err := a.saveNewAccountProxy(r.Context(), account.ID, existed, session.ProxyIn, session.ProxySpec); err != nil {
