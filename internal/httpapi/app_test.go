@@ -397,4 +397,26 @@ func TestSQLite普通用户账号隔离AndAdminCanInspectOwnership(t *testing.T)
 	if config.Code != http.StatusOK || !strings.Contains(config.Body.String(), `"restricted":true`) || strings.Contains(config.Body.String(), `"client_id"`) {
 		t.Fatalf("member panel config = %d %s", config.Code, config.Body.String())
 	}
+
+	foreign, err := app.db.UpsertAccount(context.Background(), "foreign-openid", "buffer", nil, nil, nil, nil, nil, &status)
+	if err != nil {
+		t.Fatalf("seed foreign account: %v", err)
+	}
+	for _, testRequest := range []struct {
+		method string
+		path   string
+		body   string
+	}{
+		{method: http.MethodGet, path: "/api/qinglong/jobs?ref=" + strconv.FormatInt(foreign.ID, 10)},
+		{method: http.MethodPost, path: "/accounts/refresh", body: `{"ref":"` + strconv.FormatInt(foreign.ID, 10) + `"}`},
+	} {
+		blocked := httptest.NewRecorder()
+		req := httptest.NewRequest(testRequest.method, testRequest.path, strings.NewReader(testRequest.body))
+		req.Header.Set("Content-Type", "application/json")
+		req.AddCookie(memberCookie)
+		handler.ServeHTTP(blocked, req)
+		if blocked.Code != http.StatusNotFound {
+			t.Fatalf("member foreign account request %s %s status = %d body=%s", testRequest.method, testRequest.path, blocked.Code, blocked.Body.String())
+		}
+	}
 }
