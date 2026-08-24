@@ -134,3 +134,26 @@ func TestAccountPublicRecommendsRescanAfterTwentyFiveDays(t *testing.T) {
 		t.Fatal("RescanRecommended = true before 25 days")
 	}
 }
+
+func TestUpsertAccountReusesLowestFreeID(t *testing.T) {
+	db, err := Open(":memory:")
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	first, err := db.UpsertAccount(ctx, "openid-1", "buffer", nil, nil, nil, nil, nil, nil)
+	if err != nil || first.ID != 1 {
+		t.Fatalf("first account = %+v, err=%v", first, err)
+	}
+	if err := db.DeleteAccount(ctx, first.ID); err != nil {
+		t.Fatalf("DeleteAccount() error = %v", err)
+	}
+	recreated, err := db.UpsertAccount(ctx, "openid-2", "buffer", nil, nil, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("recreated account error = %v", err)
+	}
+	if recreated.ID != 1 {
+		t.Fatalf("recreated account id = %d, want 1", recreated.ID)
+	}
+}

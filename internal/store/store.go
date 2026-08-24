@@ -351,17 +351,52 @@ func (db *DB) UpsertAccount(ctx context.Context, openid, loginBuffer string, ali
 	if err != nil {
 		return nil, err
 	}
-	_, err = db.sql.ExecContext(ctx,
-		`INSERT INTO wechat_accounts
-		(openid, login_buffer, alias, nickname, avatar, user_info, credentials, status, created_at, updated_at)
-		VALUES(?,?,?,?,?,?,?,?,?,?)
-		ON CONFLICT(openid) DO UPDATE SET
-		login_buffer=excluded.login_buffer, alias=excluded.alias, nickname=excluded.nickname,
-		avatar=excluded.avatar, user_info=excluded.user_info, credentials=excluded.credentials,
-		status=excluded.status, updated_at=excluded.updated_at`,
-		openid, loginBuffer, nullableString(alias), nullableString(nickname), nullableString(avatar),
-		userJSON, credJSON, nullableString(status), now, now,
-	)
+	// Reuse the lowest free account slot. This keeps a single account at ID 1
+	// after it is deleted and scanned again, while preserving existing IDs.
+	var existingID int64
+	err = db.sql.QueryRowContext(ctx, "SELECT id FROM wechat_accounts WHERE openid=?", openid).Scan(&existingID)
+	if err == nil {
+		_, err = db.sql.ExecContext(ctx,
+			`UPDATE wechat_accounts SET login_buffer=?, alias=?, nickname=?, avatar=?, user_info=?, credentials=?, status=?, updated_at=? WHERE id=?`,
+			loginBuffer, nullableString(alias), nullableString(nickname), nullableString(avatar),
+			userJSON, credJSON, nullableString(status), now, existingID,
+		)
+	} else if errors.Is(err, sql.ErrNoRows) {
+		rows, queryErr := db.sql.QueryContext(ctx, "SELECT id FROM wechat_accounts ORDER BY id")
+		if queryErr != nil {
+			return nil, queryErr
+		}
+		nextID := int64(1)
+		for rows.Next() {
+			var id int64
+			if scanErr := rows.Scan(&id); scanErr != nil {
+				_ = rows.Close()
+				return nil, scanErr
+			}
+			if id < nextID {
+				continue
+			}
+			if id == nextID {
+				nextID++
+				continue
+			}
+			break
+		}
+		if queryErr = rows.Err(); queryErr != nil {
+			_ = rows.Close()
+			return nil, queryErr
+		}
+		_ = rows.Close()
+		_, err = db.sql.ExecContext(ctx,
+			`INSERT INTO wechat_accounts
+			(id, openid, login_buffer, alias, nickname, avatar, user_info, credentials, status, created_at, updated_at)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
+			nextID, openid, loginBuffer, nullableString(alias), nullableString(nickname), nullableString(avatar),
+			userJSON, credJSON, nullableString(status), now, now,
+		)
+	} else {
+		return nil, err
+	}
 	if err != nil {
 		return nil, err
 	}

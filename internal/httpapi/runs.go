@@ -313,9 +313,16 @@ func (a *App) handleQingLongRunLog(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) accountRunHistory(ctx context.Context, accountID int64) ([]accountRunPublic, error) {
-	sources, cronsByID, err := a.scriptCatalog(ctx)
+	// History only needs the managed cron records. Avoid rebuilding the entire
+	// script catalog on every refresh; that can require several panel requests
+	// and is especially fragile behind a reverse proxy.
+	crons, err := a.qinglong.listCrons(ctx, "")
 	if err != nil {
 		return nil, err
+	}
+	cronsByID := make(map[int64]qingLongCron, len(crons))
+	for _, cron := range crons {
+		cronsByID[cron.ID] = cron
 	}
 	jobs, err := a.db.ListAccountScriptJobs(ctx, accountID)
 	if err != nil {
@@ -325,9 +332,13 @@ func (a *App) accountRunHistory(ctx context.Context, accountID int64) ([]account
 	if err != nil {
 		return nil, err
 	}
-	sourceByKey := make(map[string]scriptSource, len(sources))
-	for _, source := range sources {
-		sourceByKey[source.Key] = source
+	sourceByKey := make(map[string]string)
+	if repos, repoErr := qingLongRepoRoots(a.cfg.QingLongRepo); repoErr == nil {
+		for _, cron := range crons {
+			if key, _, ok := parseScriptKeyFromCron(cron, repos); ok {
+				sourceByKey[key] = cron.Name
+			}
+		}
 	}
 	logRoots := make(map[string]qingLongLogEntry, len(logs))
 	for _, entry := range logs {
@@ -349,14 +360,22 @@ func (a *App) accountRunHistory(ctx context.Context, accountID int64) ([]account
 			}
 		}
 		root, exists := logRoots[rootKey]
-		if !exists {
+		children := append([]qingLongLogEntry(nil), root.Children...)
+		if !exists && strings.TrimSpace(cron.LogPath) != "" {
+			// Some QingLong versions omit the managed directory from /open/logs
+			// while still returning the latest file path on the cron record.
+			path := strings.Trim(cron.LogPath, "/")
+			if separator := strings.LastIndex(path, "/"); separator > 0 && strings.HasSuffix(strings.ToLower(path[separator+1:]), ".log") {
+				children = []qingLongLogEntry{{Title: path[separator+1:], Key: path, Type: "file", Size: 0, CreateTime: cron.getLastExecutionAt() * 1000}}
+			}
+		}
+		if len(children) == 0 {
 			continue
 		}
-		children := append([]qingLongLogEntry(nil), root.Children...)
 		sort.Slice(children, func(i, j int) bool { return children[i].CreateTime > children[j].CreateTime })
 		name := job.ScriptKey
-		if source, found := sourceByKey[job.ScriptKey]; found {
-			name = source.Name
+		if sourceName, found := sourceByKey[job.ScriptKey]; found && !strings.HasPrefix(sourceName, "[YYB:") {
+			name = sourceName
 		}
 		for index, entry := range children {
 			if entry.Type != "file" || !strings.HasSuffix(strings.ToLower(entry.Title), ".log") {
