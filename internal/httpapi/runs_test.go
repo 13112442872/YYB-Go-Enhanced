@@ -421,7 +421,7 @@ func TestAccountRunHistoryAndLogAreScopedToAccount(t *testing.T) {
 
 	logKey := url.QueryEscape(firstLogKey)
 	log := apiRequest(t, handler, http.MethodGet, "/api/qinglong/runs/log?ref="+url.QueryEscape(ref)+"&log_key="+logKey, nil)
-	if log.Code != http.StatusOK || !strings.Contains(log.Body.String(), "fake account history log") {
+	if log.Code != http.StatusOK || !strings.Contains(log.Body.String(), "fake account log") {
 		t.Fatalf("account log response = %d %s", log.Code, log.Body.String())
 	}
 
@@ -459,12 +459,12 @@ func TestLatestAccountRunUsesOnlyCronLog(t *testing.T) {
 
 	logKey := managedLogName(1, "MDHY.js") + "/2026-07-31-14-30-00-000.log"
 	log := apiRequest(t, handler, http.MethodGet, "/api/qinglong/runs/log?ref="+url.QueryEscape(ref)+"&log_key="+url.QueryEscape(logKey), nil)
-	if log.Code != http.StatusOK || !strings.Contains(log.Body.String(), "fake account history log") {
+	if log.Code != http.StatusOK || !strings.Contains(log.Body.String(), "fake account log") {
 		t.Fatalf("latest account log response = %d %s", log.Code, log.Body.String())
 	}
 	fake.mu.Lock()
 	defer fake.mu.Unlock()
-	if fake.cronLogRequests != 0 || fake.logRequests != 1 {
+	if fake.cronLogRequests != 1 || fake.logRequests != 0 {
 		t.Fatalf("latest log requests: cron=%d detail=%d", fake.cronLogRequests, fake.logRequests)
 	}
 }
