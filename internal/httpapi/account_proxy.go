@@ -19,6 +19,7 @@ import (
 )
 
 type accountProxyIn struct {
+	Product             string `json:"product"`
 	Ref                 string `json:"ref"`
 	Mode                string `json:"mode"`
 	ProxyType           string `json:"proxy_type"`
@@ -29,6 +30,19 @@ type accountProxyIn struct {
 	RegionProvince      string `json:"region_province"`
 	RegionCity          string `json:"region_city"`
 	RefreshAheadMinutes int64  `json:"refresh_ahead_minutes"`
+}
+
+const loginProductAppStore = "appstore"
+
+func normalizeLoginProduct(product string) (string, error) {
+	product = strings.ToLower(strings.TrimSpace(product))
+	if product == "" {
+		return loginProductAppStore, nil
+	}
+	if product != loginProductAppStore {
+		return "", fmt.Errorf("登录产品 %q 尚未完成凭据兑换验证，目前仅支持 appstore", product)
+	}
+	return product, nil
 }
 
 type qrLoginSession struct {

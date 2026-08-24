@@ -40,6 +40,10 @@ func (a *App) handleQuickLoginRoot(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
 		return
 	}
+	if _, err := normalizeLoginProduct(proxyBody.Product); err != nil {
+		writeError(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
 	normalizedBody, proxySpec, err := a.normalizeAccountProxyInput(r.Context(), proxyBody)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())

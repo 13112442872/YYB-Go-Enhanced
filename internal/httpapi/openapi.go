@@ -223,6 +223,11 @@ func newOpenAPISpec() map[string]any {
 					[]map[string]any{queryStringParam("province", "6 位省份编码。", true)}, nil,
 					defaulted(map[string]any{"200": jsonResponse("城市列表。", arraySchema(refSchema("ProxyArea")))})),
 			},
+			"/api/proxy-location/recommend": map[string]any{
+				"post": openAPIOperation([]string{"proxy-profiles"}, "根据手机定位或公网 IP 推荐代理地区", nil,
+					jsonOptionalRequestBody(refSchema("ProxyLocationRequest")),
+					defaulted(map[string]any{"200": jsonResponse("匹配到供应商省市编码的推荐地区，仅用于预填。", refSchema("ProxyLocationResponse"))})),
+			},
 			"/api/qinglong/status": map[string]any{
 				"get": openAPIOperation(
 					[]string{"qinglong"}, "检查自动化面板连接状态", nil, nil,
@@ -473,6 +478,7 @@ func newOpenAPISpec() map[string]any {
 					"remark": map[string]any{"type": "string", "maxLength": 80},
 				}),
 				"ProxySpec": objectSchema(nil, map[string]any{
+					"product":               map[string]any{"type": "string", "enum": []string{"appstore"}, "default": "appstore", "description": "登录产品。电脑管家等产品在凭据兑换链路验证前不会创建会话。"},
 					"mode":                  map[string]any{"type": "string", "enum": []string{"direct", "static", "api"}, "default": "direct"},
 					"proxy_type":            map[string]any{"type": "string", "enum": []string{"http", "socks5"}, "default": "http", "description": "http 使用 HTTP CONNECT。"},
 					"static_proxy":          map[string]any{"type": "string", "example": "user:pass@127.0.0.1:8080"},
@@ -543,6 +549,19 @@ func newOpenAPISpec() map[string]any {
 				"ProxyArea": objectSchema([]string{"code", "name"}, map[string]any{
 					"code": map[string]any{"type": "string", "example": "370100"},
 					"name": map[string]any{"type": "string", "example": "济南市"},
+				}),
+				"ProxyLocationRequest": objectSchema(nil, map[string]any{
+					"latitude":  map[string]any{"type": "number", "format": "double", "minimum": -90, "maximum": 90},
+					"longitude": map[string]any{"type": "number", "format": "double", "minimum": -180, "maximum": 180},
+				}),
+				"ProxyLocationResponse": objectSchema([]string{"province", "source", "matched"}, map[string]any{
+					"province":      map[string]any{"type": "string", "example": "山东省"},
+					"city":          map[string]any{"type": "string", "example": "济南市"},
+					"source":        map[string]any{"type": "string", "enum": []string{"browser_geolocation", "client_public_ip", "server_public_ip"}},
+					"ip":            map[string]any{"type": "string"},
+					"province_code": map[string]any{"type": "string", "example": "370000"},
+					"city_code":     map[string]any{"type": "string", "example": "370100"},
+					"matched":       map[string]any{"type": "boolean"},
 				}),
 				"AccountProxyTestResponse": objectSchema([]string{"resolved", "proxy"}, map[string]any{
 					"resolved":    map[string]any{"type": "boolean"},

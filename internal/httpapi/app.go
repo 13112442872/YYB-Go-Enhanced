@@ -295,6 +295,7 @@ func (a *App) Handler() http.Handler {
 	router.Any("/accounts/proxy/test", gin.WrapF(a.handleAccountProxyTest))
 	router.Any("/api/proxy-profiles", gin.WrapF(a.handleProxyProfiles))
 	router.Any("/api/proxy-profiles/*path", gin.WrapF(a.handleProxyProfiles))
+	router.Any("/api/proxy-location/recommend", gin.WrapF(a.handleProxyLocationRecommend))
 	router.Any("/api/qinglong/status", gin.WrapF(a.handleQingLongStatus))
 	router.Any("/api/qinglong/config", gin.WrapF(a.handleQingLongConfig))
 	router.Any("/api/qinglong/sync", gin.WrapF(a.handleQingLongSync))
@@ -376,6 +377,10 @@ func (a *App) handleQRRoot(w http.ResponseWriter, r *http.Request) {
 	var body accountProxyIn
 	if err := decodeOptionalJSON(r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		return
+	}
+	if _, err := normalizeLoginProduct(body.Product); err != nil {
+		writeError(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), a.cfg.RequestTimeout+35*time.Second)
