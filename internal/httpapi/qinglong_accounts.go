@@ -345,6 +345,7 @@ func (a *App) handleQingLongSyncAll(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
+	remarks = managedYYBServerRemarks(remarks, accounts)
 	value := currentValue
 	added := 0
 	for _, acc := range accounts {
@@ -378,11 +379,44 @@ func (a *App) syncAccountToQingLong(ctx context.Context, acc *store.WechatAccoun
 			break
 		}
 	}
+	accounts, err := a.db.ListAccounts(ctx)
+	if err != nil {
+		return "", false, err
+	}
+	remarks = managedYYBServerRemarks(remarks, accounts)
 	value, added := mergeYYBServerValue(currentValue, a.cfg.QingLongServer, acc)
 	if err := a.qinglong.upsertEnv(ctx, "YYB_SERVER", value, remarks); err != nil {
 		return "", false, err
 	}
 	return value, added, nil
+}
+
+func managedYYBServerRemarks(existing string, accounts []*store.WechatAccount) string {
+	existing = strings.TrimSpace(existing)
+	if existing != "" && existing != "YYB Go 账号列表" && !strings.HasPrefix(existing, "YYB Go 账号：") {
+		return existing
+	}
+	names := make([]string, 0, len(accounts))
+	for _, acc := range accounts {
+		name := firstAccountLabel(acc.Nickname, acc.Remark, acc.Alias)
+		if name == "" {
+			name = "ID " + strconv.FormatInt(acc.ID, 10)
+		}
+		names = append(names, name)
+	}
+	if len(names) == 0 {
+		return "YYB Go 账号列表"
+	}
+	return "YYB Go 账号：" + strings.Join(names, "、")
+}
+
+func firstAccountLabel(values ...*string) string {
+	for _, value := range values {
+		if value != nil && strings.TrimSpace(*value) != "" {
+			return strings.TrimSpace(*value)
+		}
+	}
+	return ""
 }
 
 func mergeYYBServerValue(existing, server string, acc *store.WechatAccount) (string, bool) {

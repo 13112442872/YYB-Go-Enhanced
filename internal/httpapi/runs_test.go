@@ -27,6 +27,8 @@ type fakeQingLong struct {
 	logs            []qingLongLogEntry
 	failDeleteCrons bool
 	failLogDetail   bool
+	cronLogRequests int
+	logRequests     int
 }
 
 func intPointer(value int) *int { return &value }
@@ -146,10 +148,12 @@ func (f *fakeQingLong) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		f.crons = kept
 		write(nil)
 	case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/log"):
+		f.cronLogRequests++
 		write("fake account log")
 	case r.Method == http.MethodGet && r.URL.Path == "/open/logs":
 		write(f.logs)
 	case r.Method == http.MethodGet && r.URL.Path == "/open/logs/detail":
+		f.logRequests++
 		if f.failLogDetail {
 			w.WriteHeader(http.StatusBadGateway)
 			_ = json.NewEncoder(w).Encode(map[string]any{"code": 502, "message": "log detail unavailable"})
@@ -392,7 +396,7 @@ func TestAccountRunHistoryAndLogAreScopedToAccount(t *testing.T) {
 	}
 }
 
-func TestLatestAccountRunFallsBackToCronLog(t *testing.T) {
+func TestLatestAccountRunUsesOnlyCronLog(t *testing.T) {
 	fake, server := newFakeQingLong(t)
 	_, handler, ref := newRunsTestApp(t, server.URL)
 	run := apiRequest(t, handler, http.MethodPost, "/api/qinglong/jobs/run", map[string]any{
@@ -402,13 +406,43 @@ func TestLatestAccountRunFallsBackToCronLog(t *testing.T) {
 		t.Fatalf("run response = %d %s", run.Code, run.Body.String())
 	}
 
-	fake.mu.Lock()
-	fake.failLogDetail = true
-	fake.mu.Unlock()
 	logKey := managedLogName(1, "MDHY.js") + "/2026-07-31-14-30-00-000.log"
 	log := apiRequest(t, handler, http.MethodGet, "/api/qinglong/runs/log?ref="+url.QueryEscape(ref)+"&log_key="+url.QueryEscape(logKey), nil)
-	if log.Code != http.StatusOK || !strings.Contains(log.Body.String(), "fake account log") {
-		t.Fatalf("fallback account log response = %d %s", log.Code, log.Body.String())
+	if log.Code != http.StatusOK || !strings.Contains(log.Body.String(), "fake account history log") {
+		t.Fatalf("latest account log response = %d %s", log.Code, log.Body.String())
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if fake.cronLogRequests != 0 || fake.logRequests != 1 {
+		t.Fatalf("latest log requests: cron=%d detail=%d", fake.cronLogRequests, fake.logRequests)
+	}
+}
+
+func TestHistoricalAccountRunUsesFileDetail(t *testing.T) {
+	fake, server := newFakeQingLong(t)
+	_, handler, ref := newRunsTestApp(t, server.URL)
+	run := apiRequest(t, handler, http.MethodPost, "/api/qinglong/jobs/run", map[string]any{
+		"ref": ref, "script_key": "MDHY.js",
+	})
+	if run.Code != http.StatusAccepted {
+		t.Fatalf("run response = %d %s", run.Code, run.Body.String())
+	}
+	root := managedLogName(1, "MDHY.js")
+	newerName := "2026-07-31-14-31-00-000.log"
+	fake.mu.Lock()
+	fake.logs[0].Children = append(fake.logs[0].Children, qingLongLogEntry{
+		Title: newerName, Key: root + "/" + newerName, Parent: root, Type: "file", CreateTime: 1785480060000,
+	})
+	fake.mu.Unlock()
+	olderKey := root + "/2026-07-31-14-30-00-000.log"
+	log := apiRequest(t, handler, http.MethodGet, "/api/qinglong/runs/log?ref="+url.QueryEscape(ref)+"&log_key="+url.QueryEscape(olderKey), nil)
+	if log.Code != http.StatusOK || !strings.Contains(log.Body.String(), "fake account history log") {
+		t.Fatalf("historical account log response = %d %s", log.Code, log.Body.String())
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if fake.cronLogRequests != 0 || fake.logRequests != 1 {
+		t.Fatalf("historical log requests: cron=%d detail=%d", fake.cronLogRequests, fake.logRequests)
 	}
 }
 

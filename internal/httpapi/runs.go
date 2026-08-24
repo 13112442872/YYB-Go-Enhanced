@@ -284,31 +284,30 @@ func (a *App) handleQingLongRunLog(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "该日志不属于当前账号或已被清理")
 		return
 	}
+	latest := true
+	for i := range runs {
+		if runs[i].QLCronID == selected.QLCronID && runs[i].StartedAt > selected.StartedAt {
+			latest = false
+			break
+		}
+	}
 	separator := strings.LastIndex(logKey, "/")
 	if separator <= 0 || separator == len(logKey)-1 {
 		writeError(w, http.StatusBadRequest, "日志路径不合法")
 		return
 	}
+	// The log key already identifies the file. This is especially important for
+	// Arcadia: CronLog would first list all tasks and directories again, which
+	// can exceed a reverse proxy timeout before the browser receives JSON.
 	logText, err := a.qinglong.logDetail(r.Context(), logKey[:separator], logKey[separator+1:])
-	if err != nil {
-		// QingLong installations differ in which log-detail permission and route
-		// they expose. The cron endpoint is a safe fallback for the latest run.
-		latest := true
-		for i := range runs {
-			if runs[i].QLCronID == selected.QLCronID && runs[i].StartedAt > selected.StartedAt {
-				latest = false
-				break
-			}
-		}
-		if !latest {
-			writeError(w, http.StatusBadGateway, err.Error())
-			return
-		}
+	if err != nil && latest && a.qinglong.getPanelType() != PanelTypeArcadia {
+		// QingLong installations differ in which file-detail permission and route
+		// they expose. Keep its task-log fallback for the latest run only.
 		logText, err = a.qinglong.cronLog(r.Context(), selected.QLCronID)
-		if err != nil {
-			writeError(w, http.StatusBadGateway, err.Error())
-			return
-		}
+	}
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"account_id": acc.ID, "script_key": selected.ScriptKey, "log_key": logKey, "log": logText})
 }
