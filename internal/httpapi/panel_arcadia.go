@@ -260,16 +260,20 @@ func (d *arcadiaDriver) ListCrons(ctx context.Context, search string) ([]qingLon
 	return out, nil
 }
 
-func arcadiaRunCommand(command string) string {
+func arcadiaRunCommand(command string, noNativeLog bool) string {
 	command = strings.TrimSpace(command)
 	if strings.HasPrefix(command, "task ") {
-		return "arcadia run " + strings.TrimSpace(strings.TrimPrefix(command, "task "))
+		run := "arcadia run " + strings.TrimSpace(strings.TrimPrefix(command, "task "))
+		if noNativeLog {
+			run += " --no-log"
+		}
+		return run
 	}
 	return command
 }
 
 func arcadiaManagedShell(command, taskBefore, logName string) string {
-	run := arcadiaRunCommand(command)
+	run := arcadiaRunCommand(command, logName != "")
 	if logName == "" {
 		if taskBefore == "" {
 			return run
@@ -403,7 +407,7 @@ func (d *arcadiaDriver) ListLogs(ctx context.Context) ([]qingLongLogEntry, error
 		for _, file := range files {
 			children = append(children, qingLongLogEntry{
 				Title: file.Name, Key: entry.Name + "/" + file.Name, Type: "file", Parent: entry.Name,
-				CreateTime: arcadiaFileTime(file.CreatedAt),
+				CreateTime: arcadiaLogTime(file),
 			})
 		}
 		out = append(out, qingLongLogEntry{Title: entry.Name, Key: entry.Name, Type: "directory", Children: children})
@@ -420,6 +424,24 @@ func arcadiaFileTime(value string) int64 {
 	return parsed.UnixMilli()
 }
 
+func arcadiaLogTime(file arcadiaFile) int64 {
+	for _, value := range []string{file.CreatedAt, file.UpdatedAt} {
+		if timestamp := arcadiaFileTime(value); timestamp != 0 {
+			return timestamp
+		}
+	}
+	name := strings.TrimSuffix(file.Name, ".log")
+	const layout = "2006-01-02-15-04-05"
+	if len(name) < len(layout) {
+		return 0
+	}
+	parsed, err := time.ParseInLocation(layout, name[:len(layout)], time.Local)
+	if err != nil {
+		return 0
+	}
+	return parsed.UnixMilli()
+}
+
 func (d *arcadiaDriver) LogDetail(ctx context.Context, dir, filename string) (string, error) {
 	if arcadiaManagedLogPattern.FindString(dir) != dir || filename == "" || strings.ContainsAny(filename, `/\\`) {
 		return "", fmt.Errorf("无效的 Arcadia 日志路径")
@@ -427,6 +449,9 @@ func (d *arcadiaDriver) LogDetail(ctx context.Context, dir, filename string) (st
 	var content string
 	query := url.Values{"path": {arcadiaLogRoot + "/" + dir + "/" + filename}}
 	if err := d.request(ctx, http.MethodGet, "/api/open/file/v1/content?"+query.Encode(), nil, &content); err != nil {
+		if strings.Contains(err.Error(), "权限不足") {
+			return "", fmt.Errorf("Arcadia Token 缺少 file:read 权限: %w", err)
+		}
 		return "", err
 	}
 	return content, nil

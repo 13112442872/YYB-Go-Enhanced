@@ -304,7 +304,7 @@ func TestSQLite普通用户CanUsePlatformPages(t *testing.T) {
 		t.Fatalf("login member status = %d", login.Code)
 	}
 	memberCookie := login.Result().Cookies()[0]
-	for _, path := range []string{"/", "/scan", "/proxies", "/runs", "/accounts"} {
+	for _, path := range []string{"/", "/scan", "/proxies", "/runs", "/accounts", "/settings"} {
 		page := httptest.NewRecorder()
 		pageReq := httptest.NewRequest(http.MethodGet, path, nil)
 		pageReq.AddCookie(memberCookie)
@@ -312,6 +312,13 @@ func TestSQLite普通用户CanUsePlatformPages(t *testing.T) {
 		if page.Code != http.StatusOK {
 			t.Fatalf("普通用户 GET %s status = %d body=%s", path, page.Code, page.Body.String())
 		}
+	}
+	users := httptest.NewRecorder()
+	usersReq := httptest.NewRequest(http.MethodGet, "/users", nil)
+	usersReq.AddCookie(memberCookie)
+	handler.ServeHTTP(users, usersReq)
+	if users.Code != http.StatusForbidden {
+		t.Fatalf("普通用户 GET /users status = %d, want %d", users.Code, http.StatusForbidden)
 	}
 }
 

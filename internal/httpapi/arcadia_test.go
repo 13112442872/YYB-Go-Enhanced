@@ -194,7 +194,7 @@ func TestArcadiaPanelDriver(t *testing.T) {
 	fake.mu.Lock()
 	managed := fake.crons[len(fake.crons)-1]
 	fake.mu.Unlock()
-	if managed.Active != 0 || !strings.Contains(managed.Shell, "arcadia run SuperNaiBA_YYB-GO-Script/MDHY.js") || !strings.Contains(managed.Shell, arcadiaLogRoot+"/"+logName) {
+	if managed.Active != 0 || !strings.Contains(managed.Shell, "arcadia run SuperNaiBA_YYB-GO-Script/MDHY.js --no-log") || !strings.Contains(managed.Shell, arcadiaLogRoot+"/"+logName) {
 		t.Fatalf("managed Arcadia cron = %+v", managed)
 	}
 	if err := client.setCronsEnabled(ctx, []int64{created.ID}, true); err != nil {
@@ -228,11 +228,45 @@ func TestArcadiaBusinessError(t *testing.T) {
 	}
 }
 
+func TestArcadiaLogDetailExplainsFileReadPermission(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"code": 4405, "message": "权限不足"})
+	}))
+	defer server.Close()
+	driver := newArcadiaDriver(server.URL, "token", time.Second)
+	_, err := driver.LogDetail(context.Background(), "yyb_account_1_abcdef", "2026-08-23-11-00-39.log")
+	if err == nil || !strings.Contains(err.Error(), "file:read") {
+		t.Fatalf("LogDetail() error = %v", err)
+	}
+}
+
 func TestArcadiaFileTimeUsesMilliseconds(t *testing.T) {
 	got := arcadiaFileTime("2026-08-20T01:02:03.123Z")
 	want := int64(1787187723123)
 	if got != want {
 		t.Fatalf("arcadiaFileTime() = %d, want %d", got, want)
+	}
+}
+
+func TestArcadiaLogTimeFallsBackToFileName(t *testing.T) {
+	file := arcadiaFile{Name: "2026-08-23-11-00-39-3693.log"}
+	want := time.Date(2026, 8, 23, 11, 0, 39, 0, time.Local).UnixMilli()
+	if got := arcadiaLogTime(file); got != want {
+		t.Fatalf("arcadiaLogTime() = %d, want %d", got, want)
+	}
+}
+
+func TestArcadiaManagedShellKeepsSingleLog(t *testing.T) {
+	managed := arcadiaManagedShell("task repo/demo.py", "export YYB_SERVER='yyb-go:8000@1'", "yyb_account_1_abcdef")
+	if !strings.Contains(managed, "arcadia run repo/demo.py --no-log") {
+		t.Fatalf("managed shell does not disable Arcadia native log: %s", managed)
+	}
+	if strings.Count(managed, ">\"$YYB_LOG_FILE\"") != 1 {
+		t.Fatalf("managed shell should redirect to exactly one YYB log: %s", managed)
+	}
+	native := arcadiaManagedShell("task repo/demo.py", "", "")
+	if strings.Contains(native, "--no-log") {
+		t.Fatalf("unmanaged Arcadia command unexpectedly disabled native log: %s", native)
 	}
 }
 
