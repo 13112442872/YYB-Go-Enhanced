@@ -551,6 +551,19 @@ func (a *App) ensureAccountJob(ctx context.Context, acc *store.WechatAccount, sc
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return nil, scriptSource{}, err
 	}
+
+	// A YYB reinstall can remove the local account_script_jobs row while the
+	// managed cron remains in QingLong. Reuse that cron instead of trying to
+	// create a duplicate (QingLong rejects duplicate command/schedule pairs).
+	if crons, scanErr := a.qinglong.listCrons(ctx, ""); scanErr == nil {
+		if existing, ok := findManagedAccountCron(crons, acc.ID, scriptKey, command); ok {
+			if err := a.qinglong.updateCron(ctx, existing.ID, name, command, source.Schedule, taskBefore, logName); err != nil {
+				return nil, scriptSource{}, err
+			}
+			job, err := a.db.UpsertAccountScriptJob(ctx, acc.ID, scriptKey, existing.ID, source.Schedule)
+			return job, source, err
+		}
+	}
 	cron, err := a.qinglong.createCron(ctx, name, command, source.Schedule, taskBefore, logName)
 	if err != nil {
 		return nil, scriptSource{}, err
@@ -560,6 +573,35 @@ func (a *App) ensureAccountJob(ctx context.Context, acc *store.WechatAccount, sc
 	}
 	job, err = a.db.UpsertAccountScriptJob(ctx, acc.ID, scriptKey, cron.ID, source.Schedule)
 	return job, source, err
+}
+
+// findManagedAccountCron locates a cron created for this account and script.
+// The account marker is required so a normal, shared QingLong task can never
+// be adopted merely because it happens to use the same script.
+func findManagedAccountCron(crons []qingLongCron, accountID int64, scriptKey, expectedCommand string) (qingLongCron, bool) {
+	prefix := fmt.Sprintf("[YYB:%d]", accountID)
+	expected := normalizeCronCommand(expectedCommand)
+	for _, cron := range crons {
+		if !strings.HasPrefix(strings.TrimSpace(cron.Name), prefix) {
+			continue
+		}
+		actual := normalizeCronCommand(cron.Command)
+		if actual == expected || strings.HasSuffix(actual, "/"+strings.TrimSpace(scriptKey)) {
+			return cron, true
+		}
+	}
+	return qingLongCron{}, false
+}
+
+func normalizeCronCommand(command string) string {
+	command = strings.TrimSpace(command)
+	for _, prefix := range []string{"arcadia run ", "task ", "node ", "python3 ", "python "} {
+		if strings.HasPrefix(command, prefix) {
+			command = strings.TrimSpace(strings.TrimPrefix(command, prefix))
+			break
+		}
+	}
+	return command
 }
 
 func managedTaskName(acc *store.WechatAccount, sourceName string) string {

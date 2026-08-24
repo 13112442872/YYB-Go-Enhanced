@@ -309,6 +309,39 @@ func TestAccountJobsAreIsolatedDisabledByDefaultAndRunExplicitly(t *testing.T) {
 	}
 }
 
+func TestAccountJobReclaimsQingLongCronAfterLocalMappingLoss(t *testing.T) {
+	fake, server := newFakeQingLong(t)
+	fake.mu.Lock()
+	fake.crons = append(fake.crons, qingLongCron{
+		ID: 77, Name: "[YYB:1] 美的会员",
+		Command:  "task SuperNaiBA_YYB-GO-Script/MDHY.js",
+		Schedule: "11 8 * * *", LogName: "old-yyb-log", Status: 1, IsDisabled: intPointer(1),
+	})
+	fake.mu.Unlock()
+	app, handler, ref := newRunsTestApp(t, server.URL)
+	run := apiRequest(t, handler, http.MethodPost, "/api/qinglong/jobs/run", map[string]any{
+		"ref": ref, "script_key": "MDHY.js",
+	})
+	if run.Code != http.StatusAccepted {
+		t.Fatalf("run response = %d %s", run.Code, run.Body.String())
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if len(fake.crons) != 4 {
+		t.Fatalf("recovery created a duplicate cron: %d crons", len(fake.crons))
+	}
+	if len(fake.runIDs) != 1 || fake.runIDs[0] != 77 {
+		t.Fatalf("run IDs = %v, want existing cron 77", fake.runIDs)
+	}
+	job, err := app.db.GetAccountScriptJob(context.Background(), 1, "MDHY.js")
+	if err != nil {
+		t.Fatalf("restored account job: %v", err)
+	}
+	if job.QLCronID != 77 {
+		t.Fatalf("restored cron id = %d, want 77", job.QLCronID)
+	}
+}
+
 func TestAccountJobUsesCurrentQingLongStateFields(t *testing.T) {
 	fake, server := newFakeQingLong(t)
 	_, handler, ref := newRunsTestApp(t, server.URL)
