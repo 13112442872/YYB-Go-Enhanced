@@ -5,11 +5,38 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestRunsPageExposesAccountPushSettings(t *testing.T) {
+	t.Setenv("GIN_MODE", "test")
+	app, err := NewApp(Config{ResourceRoot: filepath.Join("..", "..", "resource")})
+	if err != nil {
+		t.Fatalf("NewApp() error = %v", err)
+	}
+	defer app.Close()
+
+	page := httptest.NewRecorder()
+	app.Handler().ServeHTTP(page, httptest.NewRequest(http.MethodGet, "/runs?view=push", nil))
+	if page.Code != http.StatusOK {
+		t.Fatalf("GET /runs?view=push status = %d", page.Code)
+	}
+	for _, marker := range []string{"当前账号独立推送", "配置推送", "Server酱", "PushPlus", "企业微信机器人", `initialView === "push"`} {
+		if !strings.Contains(page.Body.String(), marker) {
+			t.Fatalf("push settings marker %q missing from runs page", marker)
+		}
+	}
+
+	nav := httptest.NewRecorder()
+	app.Handler().ServeHTTP(nav, httptest.NewRequest(http.MethodGet, "/static/js/platform.js", nil))
+	if nav.Code != http.StatusOK || !strings.Contains(nav.Body.String(), `["/runs?view=push", "push", "独立推送"`) {
+		t.Fatalf("platform navigation does not expose independent push settings: %d %s", nav.Code, nav.Body.String())
+	}
+}
 
 func TestHandlerServesGinRoutesAndSwaggerDocs(t *testing.T) {
 	t.Setenv("GIN_MODE", "test")
