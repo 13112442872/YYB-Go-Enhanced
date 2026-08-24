@@ -46,6 +46,11 @@ type jobActionIn struct {
 	Enabled   bool   `json:"enabled"`
 }
 
+type runLogIn struct {
+	Ref    string `json:"ref"`
+	LogKey string `json:"log_key"`
+}
+
 type pushSettingIn struct {
 	Ref     string  `json:"ref"`
 	Channel string  `json:"channel"`
@@ -259,15 +264,29 @@ func (a *App) handleQingLongRuns(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleQingLongRunLog(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
+	if r.Method != http.MethodGet && r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	acc, ok := a.resolveAccountFromQuery(w, r)
+	ref := strings.TrimSpace(r.URL.Query().Get("ref"))
+	logKey := strings.TrimSpace(r.URL.Query().Get("log_key"))
+	if r.Method == http.MethodPost {
+		var body runLogIn
+		if err := decodeOptionalJSON(r, &body); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+			return
+		}
+		ref = strings.TrimSpace(body.Ref)
+		logKey = strings.TrimSpace(body.LogKey)
+	}
+	acc, ok := a.resolveAccountRef(w, r, ref)
 	if !ok {
 		return
 	}
-	logKey := strings.TrimSpace(r.URL.Query().Get("log_key"))
+	if logKey == "" {
+		writeError(w, http.StatusBadRequest, "缺少日志键")
+		return
+	}
 	runs, err := a.accountRunHistory(r.Context(), acc.ID)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())

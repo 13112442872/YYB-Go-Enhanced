@@ -18,6 +18,7 @@ services:
       - -keepalive-ahead
       - ${YYB_KEEPALIVE_AHEAD:-45m}
     environment:
+      TZ: ${TZ:-Asia/Shanghai}
       PANEL_TYPE: ${PANEL_TYPE:-qinglong}
       QL_URL: ${QL_URL:-}
       QL_CLIENT_ID: ${QL_CLIENT_ID:-}

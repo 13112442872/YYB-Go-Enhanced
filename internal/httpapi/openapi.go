@@ -294,6 +294,11 @@ func newOpenAPISpec() map[string]any {
 					}, nil,
 					defaulted(map[string]any{"200": jsonResponse("日志正文。", refSchema("AccountRunLogResponse"))}),
 				),
+				"post": openAPIOperation(
+					[]string{"qinglong"}, "读取账号的一条运行日志（代理兼容）", nil,
+					jsonRequestBody(refSchema("AccountRunLogRequest")),
+					defaulted(map[string]any{"200": jsonResponse("日志正文。", refSchema("AccountRunLogResponse"))}),
+				),
 			},
 			"/api/qinglong/push": map[string]any{
 				"get": openAPIOperation(
@@ -571,9 +576,9 @@ func newOpenAPISpec() map[string]any {
 					"remark":   nullableStringSchema("用户设置的账号备注。"),
 				}),
 				"WxappResponse": objectSchema([]string{"openid", "account", "result"}, map[string]any{
-					"openid": map[string]any{"type": "string"},
+					"openid":  map[string]any{"type": "string"},
 					"account": refSchema("WxappAccountLabel"),
-					"result": freeFormObjectSchema("wxapp 接口返回结果。"),
+					"result":  freeFormObjectSchema("wxapp 接口返回结果。"),
 				}),
 				"QingLongStatus": objectSchema([]string{"configured", "connected"}, map[string]any{
 					"configured": map[string]any{"type": "boolean"},
@@ -655,6 +660,10 @@ func newOpenAPISpec() map[string]any {
 					"script_key": map[string]any{"type": "string"},
 					"log_key":    map[string]any{"type": "string"},
 					"log":        map[string]any{"type": "string"},
+				}),
+				"AccountRunLogRequest": objectSchema([]string{"ref", "log_key"}, map[string]any{
+					"ref":     map[string]any{"type": "string"},
+					"log_key": map[string]any{"type": "string"},
 				}),
 				"PushSetting": objectSchema([]string{"channel", "token_configured", "topic_configured"}, map[string]any{
 					"channel":          map[string]any{"type": "string", "enum": []string{"none", "serverchan", "pushplus", "qywx"}},

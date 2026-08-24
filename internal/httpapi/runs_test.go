@@ -469,6 +469,29 @@ func TestLatestAccountRunUsesOnlyCronLog(t *testing.T) {
 	}
 }
 
+func TestLatestAccountRunLogAcceptsPostJSON(t *testing.T) {
+	fake, server := newFakeQingLong(t)
+	_, handler, ref := newRunsTestApp(t, server.URL)
+	run := apiRequest(t, handler, http.MethodPost, "/api/qinglong/jobs/run", map[string]any{
+		"ref": ref, "script_key": "MDHY.js",
+	})
+	if run.Code != http.StatusAccepted {
+		t.Fatalf("run response = %d %s", run.Code, run.Body.String())
+	}
+	logKey := managedLogName(1, "MDHY.js") + "/2026-07-31-14-30-00-000.log"
+	log := apiRequest(t, handler, http.MethodPost, "/api/qinglong/runs/log", map[string]any{
+		"ref": ref, "log_key": logKey,
+	})
+	if log.Code != http.StatusOK || !strings.Contains(log.Body.String(), "fake account log") {
+		t.Fatalf("POST account log response = %d %s", log.Code, log.Body.String())
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if fake.cronLogRequests != 1 || fake.logRequests != 0 {
+		t.Fatalf("POST latest log requests: cron=%d detail=%d", fake.cronLogRequests, fake.logRequests)
+	}
+}
+
 func TestHistoricalAccountRunUsesFileDetail(t *testing.T) {
 	fake, server := newFakeQingLong(t)
 	_, handler, ref := newRunsTestApp(t, server.URL)
