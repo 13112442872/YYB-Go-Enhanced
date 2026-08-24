@@ -481,6 +481,7 @@ func (a *App) cleanupAccountFromQingLong(ctx context.Context, acc *store.WechatA
 	}
 
 	changes := make([]qingLongEnvChange, 0)
+	deletions := make([]qingLongEnv, 0)
 	for _, env := range envs {
 		if env.Name != "YYB_SERVER" {
 			continue
@@ -489,7 +490,11 @@ func (a *App) cleanupAccountFromQingLong(ctx context.Context, acc *store.WechatA
 		if removed == 0 {
 			continue
 		}
-		changes = append(changes, qingLongEnvChange{env: env, newValue: value})
+		if strings.TrimSpace(value) == "" {
+			deletions = append(deletions, env)
+		} else {
+			changes = append(changes, qingLongEnvChange{env: env, newValue: value})
+		}
 		result.EnvEntriesRemoved += removed
 	}
 
@@ -506,6 +511,20 @@ func (a *App) cleanupAccountFromQingLong(ctx context.Context, acc *store.WechatA
 		}
 		updated = append(updated, change.env)
 	}
+	deleted := make([]qingLongEnv, 0, len(deletions))
+	rollbackAllEnvs := func() {
+		rollbackEnvs()
+		for _, env := range deleted {
+			_ = a.qinglong.upsertEnv(ctx, env.Name, env.Value, env.Remarks)
+		}
+	}
+	for _, env := range deletions {
+		if err := a.qinglong.deleteEnvEntries(ctx, []int64{env.ID}); err != nil {
+			rollbackAllEnvs()
+			return result, err
+		}
+		deleted = append(deleted, env)
+	}
 
 	cronIDs := make([]int64, 0, len(jobs))
 	seenCronIDs := make(map[int64]struct{}, len(jobs))
@@ -520,7 +539,7 @@ func (a *App) cleanupAccountFromQingLong(ctx context.Context, acc *store.WechatA
 		cronIDs = append(cronIDs, job.QLCronID)
 	}
 	if err := a.qinglong.deleteCrons(ctx, cronIDs); err != nil {
-		rollbackEnvs()
+		rollbackAllEnvs()
 		return result, err
 	}
 

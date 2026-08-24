@@ -188,6 +188,16 @@ func (d *qingLongDriver) UpdateEnvEntry(ctx context.Context, env qingLongEnv, ne
 	return d.UpdateEnv(ctx, env.ID, env.Name, newValue, env.Remarks)
 }
 
+// DeleteEnvs removes environment entries whose value would otherwise become
+// empty. QingLong rejects an empty value on PUT, so cleanup must delete the
+// final YYB_SERVER entry instead of updating it to an empty string.
+func (d *qingLongDriver) DeleteEnvs(ctx context.Context, ids []int64) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	return d.request(ctx, http.MethodDelete, "/open/envs", ids, nil)
+}
+
 func (d *qingLongDriver) SetEnvsEnabled(ctx context.Context, ids []int64, enabled bool) error {
 	path := "/open/envs/disable"
 	if enabled {

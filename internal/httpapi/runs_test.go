@@ -180,6 +180,24 @@ func (f *fakeQingLong) serveHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		write(nil)
+	case r.Method == http.MethodDelete && r.URL.Path == "/open/envs":
+		var ids []int64
+		_ = json.NewDecoder(r.Body).Decode(&ids)
+		kept := f.envs[:0]
+		for _, env := range f.envs {
+			deleted := false
+			for _, id := range ids {
+				if env.ID == id {
+					deleted = true
+					break
+				}
+			}
+			if !deleted {
+				kept = append(kept, env)
+			}
+		}
+		f.envs = kept
+		write(nil)
 	case r.Method == http.MethodPut && (r.URL.Path == "/open/envs/enable" || r.URL.Path == "/open/envs/disable"):
 		write(nil)
 	default:

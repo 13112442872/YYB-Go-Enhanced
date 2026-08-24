@@ -127,6 +127,29 @@ func TestDeleteAccountCleansQingLongLinks(t *testing.T) {
 	}
 }
 
+func TestDeleteAccountRemovesFinalYYBServerEnv(t *testing.T) {
+	fake, server := newFakeQingLong(t)
+	_, handler, ref := newRunsTestApp(t, server.URL)
+	fake.mu.Lock()
+	fake.envs = append(fake.envs, qingLongEnv{
+		ID: 41, Name: "YYB_SERVER", Value: "yyb-go:8000@" + ref,
+		Remarks: "YYB Go 账号列表", Status: 1,
+	})
+	fake.mu.Unlock()
+
+	response := apiRequest(t, handler, http.MethodDelete, "/accounts?ref="+ref, nil)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"qinglong_cleanup":"completed"`) {
+		t.Fatalf("delete response = %d %s", response.Code, response.Body.String())
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	for _, env := range fake.envs {
+		if env.Name == "YYB_SERVER" {
+			t.Fatalf("final YYB_SERVER environment was not removed: %+v", env)
+		}
+	}
+}
+
 func TestDeleteAccountKeepsLocalDataWhenQingLongCleanupFails(t *testing.T) {
 	fake, server := newFakeQingLong(t)
 	app, handler, ref := newRunsTestApp(t, server.URL)

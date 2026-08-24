@@ -196,6 +196,15 @@ func (d *arcadiaDriver) UpdateEnvEntry(ctx context.Context, env qingLongEnv, new
 	return d.UpdateEnv(ctx, env.ID, env.Name, newValue, env.Remarks)
 }
 
+func (d *arcadiaDriver) DeleteEnvs(ctx context.Context, ids []int64) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	return d.request(ctx, http.MethodPost, "/api/open/env/v1/delete", map[string]any{
+		"id": ids, "isComposite": false,
+	}, nil)
+}
+
 func (d *arcadiaDriver) SetEnvsEnabled(ctx context.Context, ids []int64, enabled bool) error {
 	status := 0
 	if enabled {

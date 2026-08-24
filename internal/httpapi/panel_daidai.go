@@ -211,6 +211,15 @@ func (d *daidaiDriver) UpdateEnvEntry(ctx context.Context, env qingLongEnv, newV
 	return d.UpsertEnv(ctx, env.Name, newValue, env.Remarks)
 }
 
+func (d *daidaiDriver) DeleteEnvs(ctx context.Context, ids []int64) error {
+	for _, id := range ids {
+		if err := d.request(ctx, http.MethodDelete, fmt.Sprintf("/api/v1/envs/%d", id), nil, nil); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (d *daidaiDriver) SetEnvsEnabled(ctx context.Context, ids []int64, enabled bool) error {
 	action := "enable"
 	if !enabled {

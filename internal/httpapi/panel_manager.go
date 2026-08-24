@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -160,6 +161,19 @@ func (p *panelManager) UpdateEnvEntry(ctx context.Context, env qingLongEnv, newV
 
 func (p *panelManager) updateEnvEntry(ctx context.Context, env qingLongEnv, newValue string) error {
 	return p.getDriver().UpdateEnvEntry(ctx, env, newValue)
+}
+
+// deleteEnvEntries is optional because older panel APIs do not expose an
+// environment delete endpoint. Callers can fall back to preserving the
+// non-empty entry when the active driver does not implement it.
+func (p *panelManager) deleteEnvEntries(ctx context.Context, ids []int64) error {
+	deleter, ok := p.getDriver().(interface {
+		DeleteEnvs(context.Context, []int64) error
+	})
+	if !ok {
+		return fmt.Errorf("当前面板不支持删除环境变量")
+	}
+	return deleter.DeleteEnvs(ctx, ids)
 }
 
 func (p *panelManager) SetEnvsEnabled(ctx context.Context, ids []int64, enabled bool) error {
