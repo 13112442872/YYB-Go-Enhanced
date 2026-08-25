@@ -366,24 +366,19 @@ def run_account(account: YybAccount) -> None:
     detail = client.sign_detail(activity_id)
     print(f"签到状态：{sign_state(detail)}")
 
-    # Always make one idempotent join attempt. This avoids trusting a stale or
-    # misleading summary flag returned by older API versions. A duplicate
-    # response is accepted only when a dated record is confirmed afterwards.
-    try:
+    # The dated record is the only reliable proof. Summary flags from older
+    # API revisions may be stale, so a missing record always gets one submit.
+    if is_signed(detail):
+        print("今日已签到：已核验当天签到记录，本轮不再重复提交")
+    else:
+        print("未发现当天签到记录，提交签到请求")
         result = client.sign(activity_id)
         reward = result.get("point")
         print(f"签到接口返回：获得 {reward} 积分" if reward is not None else "签到接口返回成功")
-    except ScriptError as exc:
         detail = wait_until_signed(client, activity_id)
-        if is_signed(detail):
-            print("接口拒绝重复签到，已核验今日已有签到记录")
-        else:
-            raise ScriptError(f"签到接口失败且未发现今日签到记录：{exc}") from exc
-
-    detail = wait_until_signed(client, activity_id)
-    if not is_signed(detail):
-        raise ScriptError(f"签到请求完成，但未确认今日签到记录（{sign_state(detail)}）")
-    print("签到结果校验：今日已签到")
+        if not is_signed(detail):
+            raise ScriptError(f"签到请求完成，但未确认今日签到记录（{sign_state(detail)}）")
+        print("签到结果校验：今日已签到")
 
     after = client.profile()
     print_profile(after, prefix="签到后")
