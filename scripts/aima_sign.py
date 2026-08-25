@@ -13,6 +13,7 @@ import re
 import time
 import uuid
 from dataclasses import dataclass
+from datetime import datetime, timezone, timedelta
 from email.utils import parsedate_to_datetime
 from typing import Any
 
@@ -260,8 +261,30 @@ class AimaClient:
         return content if isinstance(content, dict) else {}
 
 
+CHINA_TZ = timezone(timedelta(hours=8))
+
+
+def china_date(timestamp_ms: Any) -> tuple[int, int, int] | None:
+    try:
+        timestamp = int(timestamp_ms) / 1000
+    except (TypeError, ValueError):
+        return None
+    date = datetime.fromtimestamp(timestamp, tz=CHINA_TZ)
+    return date.year, date.month, date.day
+
+
 def is_signed(detail: dict[str, Any]) -> bool:
-    return detail.get("signed") == 1 or detail.get("signStatus") == 1
+    """Only a dated record proves today's sign-in; signStatus is a UI state."""
+    today = datetime.now(CHINA_TZ).date()
+    records = detail.get("signRecordCalendars")
+    if not isinstance(records, list):
+        return False
+    return any(
+        (date := china_date(item.get("signDate")))
+        and date == (today.year, today.month, today.day)
+        for item in records
+        if isinstance(item, dict)
+    )
 
 
 def points(profile: dict[str, Any]) -> dict[str, Any]:
