@@ -260,6 +260,20 @@ class AimaClient:
         )
         return content if isinstance(content, dict) else {}
 
+    def receive_sign_award(self, activity_id: str, award: dict[str, Any]) -> Any:
+        """Claim an eligible sign-in award using the mini-program's payload."""
+        return self.request(
+            "POST",
+            "mkt/activities/sign:receive_award",
+            data={
+                "activityId": activity_id,
+                "awardCount": 1,
+                "activityAwardId": award.get("activityAwardId"),
+                "awardId": award.get("awardId"),
+                "awardType": award.get("awardType"),
+            },
+        )
+
 
 CHINA_TZ = timezone(timedelta(hours=8))
 
@@ -332,6 +346,58 @@ def wait_until_signed(client: AimaClient, activity_id: str, attempts: int = 4) -
     return latest
 
 
+def claimable_point_awards(detail: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return only awards the app itself would expose as clickable points rewards."""
+    awards = detail.get("signAwards")
+    if not isinstance(awards, list):
+        return []
+    result: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for award in awards:
+        if not isinstance(award, dict):
+            continue
+        if str(award.get("awardType")) != "4":
+            continue
+        # The mini-program checks: enabled && !receiveStatus.
+        if award.get("enabled") is not True or award.get("receiveStatus"):
+            continue
+        if not award.get("awardId"):
+            continue
+        key = (
+            str(award.get("activityAwardId") or ""),
+            str(award.get("awardId") or ""),
+            str(award.get("awardType") or ""),
+        )
+        if key not in seen:
+            seen.add(key)
+            result.append(award)
+    return result
+
+
+def claim_sign_awards(client: AimaClient, activity_id: str, detail: dict[str, Any]) -> int:
+    if os.getenv("AIMA_CLAIM_SIGN_REWARDS", "1").strip().lower() in {"0", "false", "no", "off"}:
+        print("连续签到积分奖励：已按配置关闭自动领取")
+        return 0
+    awards = claimable_point_awards(detail)
+    if not awards:
+        print("连续签到积分奖励：当前没有待领取奖励")
+        return 0
+    claimed = 0
+    for award in awards:
+        name = award.get("awardName") or f"奖励 {award.get('awardId')}"
+        try:
+            result = client.receive_sign_award(activity_id, award)
+            claimed += 1
+            point = result.get("point") if isinstance(result, dict) else None
+            suffix = f"，获得 {point} 积分" if point is not None else ""
+            print(f"连续签到奖励领取成功：{name}{suffix}")
+        except ScriptError as exc:
+            # Daily sign-in should remain successful if a separate bonus claim
+            # is temporarily unavailable; the next run can retry it.
+            print(f"连续签到奖励领取失败：{name}，{safe_text(exc)}")
+    return claimed
+
+
 def points(profile: dict[str, Any]) -> dict[str, Any]:
     value = profile.get("vipMemberPointDTO")
     return value if isinstance(value, dict) else {}
@@ -379,6 +445,8 @@ def run_account(account: YybAccount) -> None:
         if not is_signed(detail):
             raise ScriptError(f"签到请求完成，但未确认今日签到记录（{sign_state(detail)}）")
         print("签到结果校验：今日已签到")
+
+    claim_sign_awards(client, activity_id, detail)
 
     after = client.profile()
     print_profile(after, prefix="签到后")
