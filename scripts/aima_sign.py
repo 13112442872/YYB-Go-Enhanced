@@ -265,8 +265,24 @@ CHINA_TZ = timezone(timedelta(hours=8))
 
 
 def china_date(timestamp_ms: Any) -> tuple[int, int, int] | None:
+    """Normalize the API's millisecond timestamp (or date string) to China date."""
+    if isinstance(timestamp_ms, str):
+        value = timestamp_ms.strip()
+        if value:
+            # Some API revisions return an ISO/date string instead of epoch ms.
+            try:
+                parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=CHINA_TZ)
+                return parsed.astimezone(CHINA_TZ).date().timetuple()[:3]
+            except ValueError:
+                pass
     try:
-        timestamp = int(timestamp_ms) / 1000
+        timestamp = int(timestamp_ms)
+        # Be tolerant of an occasional epoch-seconds response.
+        if abs(timestamp) < 100_000_000_000:
+            timestamp *= 1000
+        timestamp /= 1000
     except (TypeError, ValueError):
         return None
     date = datetime.fromtimestamp(timestamp, tz=CHINA_TZ)
@@ -274,7 +290,7 @@ def china_date(timestamp_ms: Any) -> tuple[int, int, int] | None:
 
 
 def is_signed(detail: dict[str, Any]) -> bool:
-    """Only a dated record proves today's sign-in; signStatus is a UI state."""
+    """Only a dated record proves today's sign-in; summary flags are not proof."""
     today = datetime.now(CHINA_TZ).date()
     records = detail.get("signRecordCalendars")
     if not isinstance(records, list):
@@ -285,6 +301,35 @@ def is_signed(detail: dict[str, Any]) -> bool:
         for item in records
         if isinstance(item, dict)
     )
+
+
+def sign_state(detail: dict[str, Any]) -> str:
+    """Return a compact diagnostic without treating summary flags as success."""
+    records = detail.get("signRecordCalendars")
+    dates = []
+    if isinstance(records, list):
+        for item in records:
+            if isinstance(item, dict):
+                value = china_date(item.get("signDate"))
+                if value:
+                    dates.append("%04d-%02d-%02d" % value)
+    return (
+        f"summary(signed={detail.get('signed')}, signStatus={detail.get('signStatus')}), "
+        f"当天记录={'是' if is_signed(detail) else '否'}"
+        f"，记录日期={','.join(dates[-5:]) if dates else '-'}"
+    )
+
+
+def wait_until_signed(client: AimaClient, activity_id: str, attempts: int = 4) -> dict[str, Any]:
+    """Poll briefly because the join endpoint is eventually consistent."""
+    latest: dict[str, Any] = {}
+    for attempt in range(attempts):
+        latest = client.sign_detail(activity_id)
+        if is_signed(latest):
+            return latest
+        if attempt + 1 < attempts:
+            time.sleep(1.5)
+    return latest
 
 
 def points(profile: dict[str, Any]) -> dict[str, Any]:
@@ -319,16 +364,26 @@ def run_account(account: YybAccount) -> None:
     activity_id = str(activity["activityId"])
     print(f"当前活动：{activity.get('name') or activity_id}")
     detail = client.sign_detail(activity_id)
-    if is_signed(detail):
-        print("今日已签到，本轮无需重复签到")
-    else:
+    print(f"签到状态：{sign_state(detail)}")
+
+    # Always make one idempotent join attempt. This avoids trusting a stale or
+    # misleading summary flag returned by older API versions. A duplicate
+    # response is accepted only when a dated record is confirmed afterwards.
+    try:
         result = client.sign(activity_id)
         reward = result.get("point")
-        print(f"签到接口成功：获得 {reward} 积分" if reward is not None else "签到接口成功")
-        detail = client.sign_detail(activity_id)
-        if not is_signed(detail):
-            raise ScriptError("签到接口返回成功，但重新查询仍未确认今日已签到")
-        print("签到结果校验：今日已签到")
+        print(f"签到接口返回：获得 {reward} 积分" if reward is not None else "签到接口返回成功")
+    except ScriptError as exc:
+        detail = wait_until_signed(client, activity_id)
+        if is_signed(detail):
+            print("接口拒绝重复签到，已核验今日已有签到记录")
+        else:
+            raise ScriptError(f"签到接口失败且未发现今日签到记录：{exc}") from exc
+
+    detail = wait_until_signed(client, activity_id)
+    if not is_signed(detail):
+        raise ScriptError(f"签到请求完成，但未确认今日签到记录（{sign_state(detail)}）")
+    print("签到结果校验：今日已签到")
 
     after = client.profile()
     print_profile(after, prefix="签到后")
