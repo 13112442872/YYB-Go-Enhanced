@@ -401,13 +401,18 @@ func (a *App) handleQRRoot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.mu.Lock()
-	a.qrSessions[img.Session.ID] = &qrLoginSession{Session: img.Session, Client: client, ProxySpec: proxySpec, ProxyIn: normalizedBody}
+	a.qrSessions[img.Session.ID] = &qrLoginSession{
+		Session: img.Session, Client: client, ProxySpec: proxySpec, ProxyIn: normalizedBody,
+		ImageBytes: append([]byte(nil), img.ImageBytes...),
+	}
 	keep := make(map[string]bool, len(a.qrSessions))
 	for sid := range a.qrSessions {
 		keep[sid] = true
 	}
 	a.mu.Unlock()
 	path := a.resources.qrPath(img.Session.ID)
+	// The in-memory copy above is authoritative. The file is only a cache for
+	// deployments that serve the image endpoint after a process restart.
 	_ = os.WriteFile(path, img.ImageBytes, 0o644)
 	a.cleanupQR(keep)
 	basePath := "/qr"
@@ -445,12 +450,18 @@ func (a *App) handleQR(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
-		path := a.resources.qrPath(sessionID)
-		if _, err := os.Stat(path); err != nil {
-			writeError(w, http.StatusNotFound, "qr session not found")
+		if login := a.getQRSession(sessionID); login != nil && len(login.ImageBytes) > 0 {
+			w.Header().Set("Content-Type", http.DetectContentType(login.ImageBytes))
+			w.Header().Set("Cache-Control", "no-store")
+			_, _ = w.Write(login.ImageBytes)
 			return
 		}
-		w.Header().Set("Content-Type", "image/jpeg")
+		path := a.resources.qrPath(sessionID)
+		if _, err := os.Stat(path); err != nil {
+			writeError(w, http.StatusNotFound, "qr image not found; the QR session may have expired")
+			return
+		}
+		w.Header().Set("Cache-Control", "no-store")
 		http.ServeFile(w, r, path)
 	case "poll":
 		if r.Method != http.MethodGet {

@@ -50,6 +50,9 @@ type qrLoginSession struct {
 	Client    *qr.Client
 	ProxySpec proxysource.Spec
 	ProxyIn   accountProxyIn
+	// Keep the freshly fetched image in memory so the image endpoint does not
+	// depend on the QR cache directory being writable in a container.
+	ImageBytes []byte
 }
 
 type accountProxyLease struct {
