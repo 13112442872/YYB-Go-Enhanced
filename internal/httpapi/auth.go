@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -89,6 +90,17 @@ func isManagementAPI(path string) bool {
 }
 
 func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
+	// Compatibility for legacy QingLong scripts which expect:
+	//   GET /login?appId=wx...
+	//   {"err":0,"code":"..."}
+	// Keep the normal browser login page unchanged when no app id is supplied.
+	if r.Method == http.MethodGet {
+		if appID := legacyLoginAppID(r); appID != "" {
+			a.handleLegacyCodeLogin(w, r, appID)
+			return
+		}
+	}
+
 	if a.auth == nil {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
@@ -136,6 +148,72 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 	setSessionCookie(w, token, a.cfg.CookieSecure, a.cfg.SessionDuration)
 	next := safeNext(body.Next)
 	writeJSON(w, http.StatusOK, map[string]any{"user": user, "next": next})
+}
+
+func legacyLoginAppID(r *http.Request) string {
+	for _, key := range []string{"appId", "appid", "app_id"} {
+		if value := strings.TrimSpace(r.URL.Query().Get(key)); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func (a *App) handleLegacyCodeLogin(w http.ResponseWriter, r *http.Request, appID string) {
+	ref := strings.TrimSpace(r.URL.Query().Get("ref"))
+	if ref == "" {
+		ref = strings.TrimSpace(os.Getenv("YYB_DEFAULT_REF"))
+	}
+	if ref == "" {
+		accounts, err := a.db.ListAccounts(r.Context())
+		if err != nil {
+			writeLegacyCodeError(w, "list accounts failed: "+err.Error())
+			return
+		}
+		if len(accounts) == 0 {
+			writeLegacyCodeError(w, "no WeChat account; scan login first")
+			return
+		}
+		// Legacy clients have no account selector. Use the first saved account
+		// unless YYB_DEFAULT_REF (or ?ref=) explicitly chooses another one.
+		ref = strconv.FormatInt(accounts[0].ID, 10)
+	}
+
+	acc, err := a.db.ResolveAccount(r.Context(), ref)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeLegacyCodeError(w, "account not found: "+ref)
+		} else {
+			writeLegacyCodeError(w, "resolve account failed: "+err.Error())
+		}
+		return
+	}
+
+	result, err := a.invokeWXApp(r.Context(), acc, appID, nil, a.invokeGetCode)
+	if err != nil {
+		writeLegacyCodeError(w, "get code failed: "+err.Error())
+		return
+	}
+	code := strings.TrimSpace(stringFromAny(result["code"]))
+	if code == "" {
+		writeLegacyCodeError(w, "get code failed: empty code")
+		return
+	}
+
+	writeRawJSON(w, http.StatusOK, map[string]any{
+		"err":  0,
+		"code": code,
+	})
+}
+
+func writeLegacyCodeError(w http.ResponseWriter, message string) {
+	// Keep HTTP 200 for compatibility with old helpers that only inspect
+	// the JSON `err` field and do not handle non-2xx responses consistently.
+	writeRawJSON(w, http.StatusOK, map[string]any{
+		"err":  -1,
+		"code": nil,
+		"msg":  message,
+	})
 }
 
 func (a *App) handleRegister(w http.ResponseWriter, r *http.Request) {
