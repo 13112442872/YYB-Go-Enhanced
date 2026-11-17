@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+# name: pp停车任务
 
 """
 PP停车动态 code 版
@@ -35,6 +36,7 @@ from typing import Any, Dict, List, Tuple
 from urllib.parse import parse_qs, quote, urlsplit
 
 import requests
+from yyb_account_guard import filter_accounts, update_from_result
 
 
 APP_NAME = "PP停车小程序"
@@ -1086,6 +1088,7 @@ def main() -> None:
     global CURRENT_ACCOUNTS
     try:
         CURRENT_ACCOUNTS = load_account_targets()
+        CURRENT_ACCOUNTS = filter_accounts(CURRENT_ACCOUNTS, lambda account: account.ref, app_id=APPID, log=print)
     except Exception as exc:
         print(f"❌ [配置] {exc}")
         return
@@ -1096,6 +1099,7 @@ def main() -> None:
     for index, account in enumerate(CURRENT_ACCOUNTS, 1):
         try:
             result = run_account(index, len(CURRENT_ACCOUNTS), account)
+            update_from_result(account.ref, result, app_id=APPID)
             results.append(result)
         except Exception as exc:
             print(f"❌ [主程序] {account.label} 执行异常: {exc}")

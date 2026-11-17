@@ -2,11 +2,14 @@ package httpapi
 
 import (
 	"context"
+	"database/sql"
 	"errors"
+	"log"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"yyb_go/internal/store"
 )
@@ -279,9 +282,6 @@ func validatePanelConfig(panelType, baseURL, clientID, secret string) error {
 }
 
 func (a *App) handleQingLongSync(w http.ResponseWriter, r *http.Request) {
-	if a.auth != nil && !requireAdmin(w, r) {
-		return
-	}
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
@@ -304,9 +304,56 @@ func (a *App) handleQingLongSync(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
+	responseValue := any(value)
+	if a.auth != nil {
+		user := a.browserUser(r)
+		if user == nil || user.Role != "admin" {
+			// The panel variable is shared by all accounts. Ordinary users may
+			// sync their own account, but must not receive other users' entries.
+			responseValue = nil
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"account": acc.Public(), "name": "YYB_SERVER", "value": value, "added": added,
+		"account": acc.Public(), "name": "YYB_SERVER", "value": responseValue, "added": added,
+		// The account the variable lists: the primary when acc is a fleet member.
+		"synced_id": a.panelRepresentative(r.Context(), acc).ID,
 	})
+}
+
+// autoSyncAfterScan reconciles a newly added or rescanned account in the
+// configured automation panel. Panel synchronization is a side effect of QR
+// authorization: a panel outage must never turn a successful scan into an
+// error or require the user to repeat the authorization.
+func (a *App) autoSyncAfterScan(acc *store.WechatAccount) {
+	if acc == nil || !a.qinglong.configured() {
+		return
+	}
+	go func(account *store.WechatAccount) {
+		timeout := a.cfg.RequestTimeout * 2
+		if timeout < 10*time.Second {
+			timeout = 10 * time.Second
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+		if _, _, err := a.syncAccountToQingLong(ctx, account); err != nil {
+			log.Printf("[auto-sync] account %d panel sync failed: %v", account.ID, err)
+		}
+	}(acc)
+}
+
+// deferredPanelSyncDelay is how long the panel sync of a multi-channel scan waits.
+// The console binds the scanned accounts into a fleet right after each
+// confirmation; by the time the delay is over a member is listed through its
+// primary, and an account that stayed independent lists itself.
+var deferredPanelSyncDelay = 15 * time.Second
+
+// autoSyncAfterScanLater is autoSyncAfterScan for a scan that is one of several
+// channels of the same WeChat.
+func (a *App) autoSyncAfterScanLater(acc *store.WechatAccount, delay time.Duration) {
+	if acc == nil || !a.qinglong.configured() {
+		return
+	}
+	time.AfterFunc(delay, func() { a.autoSyncAfterScan(acc) })
 }
 
 // handleQingLongSyncAll reconciles every locally stored account into the
@@ -325,6 +372,8 @@ func (a *App) handleQingLongSyncAll(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "请先配置面板 OpenAPI")
 		return
 	}
+	a.panelSyncMu.Lock()
+	defer a.panelSyncMu.Unlock()
 	accounts, err := a.db.ListAccounts(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -335,60 +384,212 @@ func (a *App) handleQingLongSyncAll(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
+	env, err := selectYYBServerEnv(envs)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
 	currentValue, remarks := "", "YYB Go 账号列表"
-	for _, env := range envs {
-		if env.Name == "YYB_SERVER" {
-			currentValue = env.Value
-			if strings.TrimSpace(env.Remarks) != "" {
-				remarks = env.Remarks
-			}
-			break
-		}
+	if env != nil {
+		currentValue, remarks = env.Value, env.Remarks
 	}
 	remarks = managedYYBServerRemarks(remarks, accounts)
 	value := currentValue
 	added := 0
+	pending := map[int64]string{}
 	for _, acc := range accounts {
+		var migrationErr error
+		value, pending[acc.ID], migrationErr = a.migratePendingAccountReferences(r.Context(), value, acc)
+		if migrationErr != nil {
+			writeError(w, 500, "读取待同步引用失败")
+			return
+		}
+		if fleetPrimaryOf(acc) > 0 && fleetPrimaryOf(acc) != acc.ID {
+			// A member is listed through its primary, which is in this loop too.
+			continue
+		}
 		var changed bool
-		value, changed = mergeYYBServerValue(value, a.cfg.QingLongServer, acc)
+		value, changed = mergeYYBServerValue(value, a.cfg.QingLongServer, acc, a.cfg.QingLongRefMode)
 		if changed {
 			added++
 		}
 	}
-	if err := a.qinglong.upsertEnv(r.Context(), "YYB_SERVER", value, remarks); err != nil {
+	if err := a.saveYYBServerEnv(r.Context(), env, value, remarks); err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
+	}
+	for id, snapshot := range pending {
+		_ = a.db.CompleteAccountReferences(r.Context(), id, snapshot)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"name": "YYB_SERVER", "value": value, "accounts": len(accounts), "added": added,
 	})
 }
 
+// panelRepresentative is the account that stands for acc in the panel variable.
+// A fleet is listed by its primary: requests for the primary already rotate
+// across the members, so an entry per member would run every script once per
+// channel. Everything else represents itself.
+func (a *App) panelRepresentative(ctx context.Context, acc *store.WechatAccount) *store.WechatAccount {
+	if primaryID := fleetPrimaryOf(acc); primaryID > 0 && primaryID != acc.ID {
+		if primary, err := a.db.GetAccount(ctx, primaryID); err == nil {
+			return primary
+		}
+	}
+	return acc
+}
+
 func (a *App) syncAccountToQingLong(ctx context.Context, acc *store.WechatAccount) (string, bool, error) {
+	a.panelSyncMu.Lock()
+	defer a.panelSyncMu.Unlock()
+	acc, err := a.db.GetAccount(ctx, acc.ID)
+	if err != nil {
+		return "", false, err
+	}
 	envs, err := a.qinglong.listEnvs(ctx, "YYB_SERVER")
 	if err != nil {
 		return "", false, err
 	}
+	env, err := selectYYBServerEnv(envs)
+	if err != nil {
+		return "", false, err
+	}
 	currentValue, remarks := "", "YYB Go 账号列表"
-	for _, env := range envs {
-		if env.Name == "YYB_SERVER" {
-			currentValue = env.Value
-			if strings.TrimSpace(env.Remarks) != "" {
-				remarks = env.Remarks
-			}
-			break
-		}
+	if env != nil {
+		currentValue, remarks = env.Value, env.Remarks
 	}
 	accounts, err := a.db.ListAccounts(ctx)
 	if err != nil {
 		return "", false, err
 	}
 	remarks = managedYYBServerRemarks(remarks, accounts)
-	value, added := mergeYYBServerValue(currentValue, a.cfg.QingLongServer, acc)
-	if err := a.qinglong.upsertEnv(ctx, "YYB_SERVER", value, remarks); err != nil {
+	currentValue, pending, err := a.migratePendingAccountReferences(ctx, currentValue, acc)
+	if err != nil {
 		return "", false, err
 	}
+	value, added := mergeYYBServerValue(currentValue, a.cfg.QingLongServer, a.panelRepresentative(ctx, acc), a.cfg.QingLongRefMode)
+	if err := a.saveYYBServerEnv(ctx, env, value, remarks); err != nil {
+		return "", false, err
+	}
+	_ = a.db.CompleteAccountReferences(ctx, acc.ID, pending)
 	return value, added, nil
+}
+
+func (a *App) migratePendingAccountReferences(ctx context.Context, value string, acc *store.WechatAccount) (string, string, error) {
+	refs, snapshot, err := a.db.PendingAccountReferences(ctx, acc.ID)
+	if err != nil {
+		return "", "", err
+	}
+	for _, ref := range refs {
+		targetRef := acc.OpenID
+		if _, err := strconv.ParseInt(ref, 10, 64); err == nil {
+			targetRef = strconv.FormatInt(acc.ID, 10)
+		}
+		if ref != targetRef && containsYYBServerReference(value, ref) {
+			owner, lookupErr := a.db.ResolveAccount(ctx, ref)
+			if lookupErr != nil && !errors.Is(lookupErr, sql.ErrNoRows) {
+				return "", "", lookupErr
+			}
+			if lookupErr == nil && owner.ID != acc.ID {
+				return "", "", errors.New("待迁移旧引用已被其他账号复用，请先在面板手动核对")
+			}
+		}
+		value = migrateAccountOpenIDReference(value, ref, targetRef)
+	}
+	return value, snapshot, nil
+}
+
+func containsYYBServerReference(value, ref string) bool {
+	for _, line := range strings.Split(value, "\n") {
+		index := strings.LastIndex(line, "@")
+		if index >= 0 && strings.TrimSpace(line[index+1:]) == ref {
+			return true
+		}
+	}
+	return false
+}
+
+// A channel switch changes the external identity, not the local account ID.
+// Migrate managed OpenID references before merging so the old row cannot linger.
+// Use a detached bounded context: closing the scan page must not cancel this step.
+func (a *App) syncUpdatedAccountReferences(after *store.WechatAccount) string {
+	if !a.qinglong.configured() {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), max(10*time.Second, a.cfg.RequestTimeout*2))
+	defer cancel()
+	if _, _, err := a.syncAccountToQingLong(ctx, after); err != nil {
+		// Panel errors can contain the variable value; do not log that content.
+		log.Printf("[auto-sync] account %d reference migration failed", after.ID)
+		return "账号已更新，面板引用同步失败，请在控制台重新同步；手动维护的旧 OpenID 引用也需更新"
+	}
+	return ""
+}
+
+func migrateAccountOpenIDReference(value, oldID, newID string) string {
+	if oldID == "" || oldID == newID {
+		return value
+	}
+	lines := strings.Split(strings.ReplaceAll(value, "\r\n", "\n"), "\n")
+	seen := map[string]bool{}
+	out := make([]string, 0, len(lines))
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		separator := strings.LastIndex(trimmed, "@")
+		if separator >= 0 {
+			ref := strings.TrimSpace(trimmed[separator+1:])
+			if ref == oldID {
+				line = trimmed[:separator+1] + newID
+				ref = newID
+			}
+			if ref == newID {
+				key := strings.TrimSpace(line)
+				if seen[key] {
+					continue
+				}
+				seen[key] = true
+			}
+		}
+		out = append(out, line)
+	}
+	return strings.Join(out, "\n")
+}
+
+// Prefer the active variable over disabled historical copies. Ambiguous
+// active copies require explicit reconciliation rather than losing entries
+// or silently re-enabling accounts from a stale variable.
+func selectYYBServerEnv(envs []qingLongEnv) (*qingLongEnv, error) {
+	var active, disabled *qingLongEnv
+	disabledCount := 0
+	for i := range envs {
+		env := &envs[i]
+		if env.Name != "YYB_SERVER" {
+			continue
+		}
+		if env.enabled() {
+			if active != nil {
+				return nil, errors.New("面板存在多条已启用的 YYB_SERVER，请先在面板合并账号并仅保留一条启用记录，再同步；已有变量未被修改")
+			}
+			active = env
+		} else {
+			disabled = env
+			disabledCount++
+		}
+	}
+	if active != nil {
+		return active, nil
+	}
+	if disabledCount > 1 {
+		return nil, errors.New("面板存在多条已禁用的 YYB_SERVER，请先选择并启用需要继续使用的一条，再同步；已有变量未被修改")
+	}
+	return disabled, nil
+}
+
+func (a *App) saveYYBServerEnv(ctx context.Context, env *qingLongEnv, value, remarks string) error {
+	if env != nil {
+		return a.qinglong.updateEnv(ctx, env.ID, "YYB_SERVER", value, remarks)
+	}
+	return a.qinglong.upsertEnv(ctx, "YYB_SERVER", value, remarks)
 }
 
 func managedYYBServerRemarks(existing string, accounts []*store.WechatAccount) string {
@@ -419,7 +620,7 @@ func firstAccountLabel(values ...*string) string {
 	return ""
 }
 
-func mergeYYBServerValue(existing, server string, acc *store.WechatAccount) (string, bool) {
+func mergeYYBServerValue(existing, server string, acc *store.WechatAccount, modes ...string) (string, bool) {
 	existing = strings.ReplaceAll(existing, "\r\n", "\n")
 	existing = strings.TrimRight(existing, "\n")
 	id := strconv.FormatInt(acc.ID, 10)
@@ -433,7 +634,15 @@ func mergeYYBServerValue(existing, server string, acc *store.WechatAccount) (str
 			return existing, false
 		}
 	}
-	entry := strings.TrimSpace(server) + "@" + id
+	refMode := ""
+	if len(modes) > 0 {
+		refMode = modes[0]
+	}
+	ref := id
+	if strings.EqualFold(strings.TrimSpace(refMode), "openid") && strings.TrimSpace(acc.OpenID) != "" {
+		ref = strings.TrimSpace(acc.OpenID)
+	}
+	entry := strings.TrimSpace(server) + "@" + ref
 	if existing == "" {
 		return entry, true
 	}

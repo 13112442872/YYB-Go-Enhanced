@@ -4,7 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>添加账号 - YYB Go</title>
-  <link rel="stylesheet" href="/static/css/platform.css?v=20260824-push1">
+  <link rel="stylesheet" href="/static/css/platform.css?v=20261109-ui">
+  <link rel="stylesheet" href="/static/css/skin-clean.css?v=20261103-skin">
+  <link rel="stylesheet" href="/static/css/multi-channel.css?v=20261109">
+  <script>try{if(localStorage.getItem("yyb-skin")==="clean")document.documentElement.dataset.skin="clean"}catch(e){}</script>
   <style>
     :root { color-scheme: light; --bg:#f5f6f8; --surface:#fff; --ink:#20242b; --muted:#68707d; --line:#dde1e7; --primary:#c53255; --primary-hover:#a82445; --success:#287a49; --success-soft:#edf8f1; --danger:#b53636; --radius:8px; }
     * { box-sizing:border-box; }
@@ -21,13 +24,18 @@
     .head { padding:18px 20px; border-bottom:1px solid var(--line); }
     .head h2 { margin:0; font-size:17px; letter-spacing:0; }
     .head p { margin:4px 0 0; color:var(--muted); font-size:13px; }
-    .body { padding:20px; }
+    .body { padding:20px; display:grid; gap:16px; align-content:start; }
+    .body > * { min-width:0; }
+    .body > .field, .body > .proxy-options, .body > .mode-switch, .body > .actions { margin:0; }
+    .mode-pane .actions { justify-content:center; margin-top:12px; }
+    .panel-foot { padding-top:14px; border-top:1px solid var(--line); }
     .mode-switch { display:grid; grid-template-columns:1fr 1fr; gap:4px; margin-bottom:18px; padding:4px; background:#eef0f3; border-radius:var(--radius); }
     .mode-button { min-height:36px; border:0; border-radius:6px; background:transparent; color:var(--muted); font-weight:650; }
     .mode-button[aria-selected="true"] { background:var(--surface); color:var(--ink); box-shadow:0 1px 3px rgba(25,31,40,.12); }
     .mode-pane[hidden] { display:none; }
     .qr { width:min(100%,280px); aspect-ratio:1; margin:0 auto; display:grid; place-items:center; background:#fafafa; border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; color:var(--muted); }
     .qr { position:relative; }
+    .qr.bridge { width:100%; aspect-ratio:auto; min-height:280px; }
     .qr img { width:100%; height:100%; object-fit:contain; transition:filter 180ms ease, opacity 180ms ease; }
     .qr.waiting-confirm img { filter:blur(7px); opacity:.35; }
     .qr.waiting-confirm::after { content:attr(data-waiting-label); position:absolute; inset:0; display:grid; place-items:center; padding:20px; text-align:center; color:#20242b; font-weight:750; font-size:16px; background:rgba(255,255,255,.46); backdrop-filter:blur(1px); }
@@ -36,7 +44,7 @@
     .quick-state strong { font-size:16px; }
     .quick-state span { max-width:260px; color:var(--muted); font-size:13px; }
     .check { font-size:54px; color:var(--success); }
-    .status { min-height:24px; margin:16px 0 0; text-align:center; font-weight:600; }
+    .status { min-height:24px; margin:12px 0 0; text-align:center; font-weight:600; }
     .status.pending { color:var(--muted); } .status.scanned { color:#2166a5; } .status.ok { color:var(--success); } .status.error { color:var(--danger); }
     .countdown { min-height:18px; margin-top:2px; text-align:center; color:var(--muted); font-size:12px; }
     .actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:18px; }
@@ -66,7 +74,19 @@
     .location-suggestion strong { display:block; font-size:13px; }
     .location-suggestion span { display:block; margin-top:2px; font-size:12px; }
     .location-actions { display:flex; gap:6px; flex:0 0 auto; }
+    .auth-note { margin:12px 0 0; padding:10px 12px; border:1px solid #c9d9e8; border-radius:var(--radius); background:#f1f7fc; color:#254b6d; font-size:12px; line-height:1.55; }
     @media (max-width:720px) { .topbar { padding:10px 16px; } .brand p { display:none; } main { margin:16px auto; grid-template-columns:1fr; } .actions .btn { flex:1 1 140px; } .proxy-grid { grid-template-columns:1fr; } .proxy-wide { grid-column:auto; } }
+    @media (min-width:1280px) {
+      main { grid-template-columns:minmax(0,1fr) minmax(320px,360px); align-items:stretch; }
+      body:not(.multi-on) .auth-panel > .body { grid-template-columns:minmax(0,1fr) 280px; grid-template-rows:auto auto auto minmax(0,1fr) auto; column-gap:32px; }
+      body:not(.multi-on) .auth-panel > .body > .multi-field { grid-column:1; grid-row:1; }
+      body:not(.multi-on) .auth-panel > .body > #scanProductField { grid-column:1; grid-row:2; }
+      body:not(.multi-on) .auth-panel > .body > #scanProxyOptions { grid-column:1; grid-row:3; }
+      body:not(.multi-on) .auth-panel > .body > #modeSwitch { grid-column:2; grid-row:1; }
+      body:not(.multi-on) .auth-panel > .body > .mode-pane { grid-column:2; grid-row:1 / 5; }
+      body:not(.multi-on) .auth-panel > .body > #modeSwitch:not([hidden]) ~ .mode-pane { grid-row:2 / 5; }
+      body:not(.multi-on) .auth-panel > .body > .panel-foot { grid-column:1 / -1; grid-row:5; }
+    }
     @media (prefers-reduced-motion:reduce) { *,*::before,*::after { scroll-behavior:auto!important; transition:none!important; } }
   </style>
 </head>
@@ -76,9 +96,14 @@
     <a class="link" href="/">返回控制台</a>
   </header>
   <main>
-    <section class="panel">
-      <div class="head"><h2>微信授权</h2><p>选择本机微信确认或手机扫码</p></div>
+    <section class="panel auth-panel">
+      <div class="head"><h2>微信授权</h2><p id="authMethodDescription">正在读取授权方式…</p></div>
       <div class="body">
+        <div class="multi-field">
+          <label class="multi-switch" for="multiScanSwitch"><input type="checkbox" id="multiScanSwitch" role="switch" autocomplete="off"><span class="multi-track" aria-hidden="true"></span><span>多渠道扫码</span></label>
+          <small class="multi-hint" id="multiScanHint">同一个微信依次扫多个渠道的码，自动合并成一个账号，脚本只需保留主账号。</small>
+        </div>
+        <div class="field single-only" id="scanProductField"><label for="scanProduct">扫码渠道</label><select class="input" id="scanProduct"><option value="appstore">YYB</option><option value="pcmgr">PCMgr</option><option value="gameassist">GameAssist</option></select><small>切换会重新生成二维码。要保留原 ID 换渠道，请使用账号的“更新”入口。</small></div>
         <details class="proxy-options" id="scanProxyOptions">
           <summary>登录网络代理</summary>
           <div class="proxy-grid">
@@ -133,11 +158,11 @@
           </div>
           <div class="proxy-message" id="scanProxyMessage">默认直连</div>
         </details>
-        <div class="mode-switch" role="tablist" aria-label="授权方式">
-          <button class="mode-button" id="quickModeBtn" type="button" role="tab" aria-selected="true" aria-controls="quickPane">本机微信</button>
-          <button class="mode-button" id="qrModeBtn" type="button" role="tab" aria-selected="false" aria-controls="qrPane">扫码</button>
+        <div class="mode-switch single-only" id="modeSwitch" role="tablist" aria-label="授权方式">
+          <button class="mode-button" id="quickModeBtn" type="button" role="tab" aria-selected="false" aria-controls="quickPane">本机微信</button>
+          <button class="mode-button" id="qrModeBtn" type="button" role="tab" aria-selected="true" aria-controls="qrPane">扫码</button>
         </div>
-        <div class="mode-pane" id="quickPane" role="tabpanel" aria-labelledby="quickModeBtn">
+        <div class="mode-pane single-only" id="quickPane" role="tabpanel" aria-labelledby="quickModeBtn" hidden>
           <div class="quick-state" id="quickState" role="status" aria-live="polite">
             <div class="quick-avatar" id="quickAvatar">微</div>
             <strong id="quickName">正在检测本机微信</strong>
@@ -148,20 +173,26 @@
             <button class="btn" id="quickRetryBtn" type="button">重新检测</button>
           </div>
         </div>
-        <div class="mode-pane" id="qrPane" role="tabpanel" aria-labelledby="qrModeBtn" hidden>
+        <div class="mode-pane single-only" id="qrPane" role="tabpanel" aria-labelledby="qrModeBtn">
           <div class="qr" id="qrWrap">准备生成二维码</div>
           <div class="status pending" id="status">等待生成二维码</div>
           <div class="countdown" id="countdown"></div>
           <div class="actions">
             <button class="btn" id="refreshBtn" type="button">重新生成</button>
           </div>
+          <div class="auth-note" id="qrModeNote" hidden>当前仅支持手机扫码授权。本机微信登录已关闭，可通过服务端变量 <code>YYB_ENABLE_PC_LOGIN=true</code> 显式开启。</div>
         </div>
-        <div class="actions"><button class="btn" id="backBtn" type="button">账号列表</button></div>
+        <div class="multi-pane" id="multiPane" hidden>
+          <div class="multi-base" id="multiBase" hidden></div>
+          <div class="multi-grid" id="multiGrid"></div>
+        </div>
+        <div class="actions panel-foot"><button class="btn" id="backBtn" type="button">账号列表</button></div>
       </div>
     </section>
     <section class="panel">
       <div class="head"><h2>账号信息</h2><p>备注用于账号运行管理和青龙任务名称</p></div>
       <div class="body">
+        <div class="multi-members" id="multiMembers" hidden></div>
         <div class="placeholder" id="accountPlaceholder">授权成功后将在这里显示账号信息。</div>
         <div class="account" id="accountBox">
           <div class="identity">
@@ -185,15 +216,20 @@
       </div>
     </section>
   </main>
+  <script src="/static/js/scan-channel.js?v=094"></script>
+  <script src="/static/js/scan-multi.js?v=0300"></script>
   <script>
     const $ = id => document.getElementById(id);
     const QR_TTL = 110;
-    let sid = null, account = null, pollTimer = null, countdownTimer = null, seconds = 0;
+    const PC_LOGIN_ENABLED = __YYB_PC_LOGIN_ENABLED__;
+    let sid = null, account = null, pollTimer = null, countdownTimer = null, seconds = 0, pollBusy = false;
+	let qrGeneration=0;
     let quickConfig = null, quickPort = null, quickProfile = null, quickBusy = false;
 	let proxyProfiles = [], proxyCities = new Map(), pendingLocation = null;
-    async function api(method,url,body) { const options={method,headers:{"Content-Type":"application/json"}}; if(body!==undefined) options.body=JSON.stringify(body); const response=await fetch(url,options); const text=await response.text(); let payload=null; try{payload=text?JSON.parse(text):null}catch{payload=text} const envelope=payload&&typeof payload==="object"&&!Array.isArray(payload)&&"code" in payload&&"data" in payload; if(!response.ok||(envelope&&payload.code!==0)) throw new Error(envelope?payload.msg:`HTTP ${response.status}`); return envelope?payload.data:payload; }
+    function applyAuthModeUI(){ const description=$('authMethodDescription'),switcher=$('modeSwitch'),note=$('qrModeNote'); if(PC_LOGIN_ENABLED){ description.textContent='可选择本机微信确认或手机扫码'; note.hidden=true; }else{ description.textContent='当前仅支持手机扫码授权'; switcher.hidden=true; note.hidden=false; $('quickModeBtn').hidden=true; $('quickPane').hidden=true; $('qrModeBtn').setAttribute('aria-selected','true'); } }
+    async function api(method,url,body) { const options={method,headers:{"Content-Type":"application/json"}}; if(body!==undefined) options.body=JSON.stringify(body); const response=await fetch(url,options); const text=await response.text(); let payload=null; try{payload=text?JSON.parse(text):null}catch{payload=text} const envelope=payload&&typeof payload==="object"&&!Array.isArray(payload)&&"code" in payload&&"data" in payload; if(!response.ok||(envelope&&payload.code!==0)){const error=new Error(envelope?payload.msg:`HTTP ${response.status}`);error.status=response.status;throw error;} return envelope?payload.data:payload; }
     function stopTimers(){ if(pollTimer) clearInterval(pollTimer); if(countdownTimer) clearInterval(countdownTimer); pollTimer=countdownTimer=null; }
-	function proxyPayload(){ const mode=$('scanProxyMode').value,profileMode=mode==="profile",province=$('scanProvince'),city=$('scanCity').value; return {product:"appstore",mode:profileMode?"api":mode,proxy_type:$('scanProxyType').value,static_proxy:$('scanStaticProxy').value.trim(),api_url:$('scanProxyAPI').value.trim(),provider_profile_id:profileMode&&$('scanProxyProfile').value?Number($('scanProxyProfile').value):null,region_code:profileMode?(city||province.value):"",region_province:profileMode&&province.value!=="all"?province.options[province.selectedIndex]?.text||"":"",region_city:profileMode&&city?$('scanCity').options[$('scanCity').selectedIndex]?.text||"":"",refresh_ahead_minutes:5}; }
+	function proxyPayload(product){ const mode=$('scanProxyMode').value,profileMode=mode==="profile",province=$('scanProvince'),city=$('scanCity').value; return {product:product||$('scanProduct').value,mode:profileMode?"api":mode,proxy_type:$('scanProxyType').value,static_proxy:$('scanStaticProxy').value.trim(),api_url:$('scanProxyAPI').value.trim(),provider_profile_id:profileMode&&$('scanProxyProfile').value?Number($('scanProxyProfile').value):null,region_code:profileMode?(city||province.value):"",region_province:profileMode&&province.value!=="all"?province.options[province.selectedIndex]?.text||"":"",region_city:profileMode&&city?$('scanCity').options[$('scanCity').selectedIndex]?.text||"":"",refresh_ahead_minutes:5}; }
 	function proxyChoiceLabel(){const mode=$('scanProxyMode').value;if(mode==="direct")return "直连";if(mode==="static")return "静态代理";if(mode==="api")return "自定义动态 API";const profile=$('scanProxyProfile').options[$('scanProxyProfile').selectedIndex]?.text||"供应商配置",region=$('scanCity').value?$('scanCity').options[$('scanCity').selectedIndex]?.text:$('scanProvince').options[$('scanProvince').selectedIndex]?.text||"全国";return `${profile} · ${region}`;}
 	function showProxyChoice(){ $('scanProxyMessage').textContent=`新账号将使用：${proxyChoiceLabel()}。已有账号重扫时保留原代理。`; }
 	function toggleProxyFields(){ const mode=$('scanProxyMode').value; $('scanStaticProxyGroup').hidden=mode!=="static"; $('scanProxyAPIGroup').hidden=mode!=="api"; $('scanProxyProfileGroup').hidden=mode!=="profile"; $('scanProvinceGroup').hidden=mode!=="profile"; $('scanCityGroup').hidden=mode!=="profile"; $('scanProxyType').disabled=mode==="direct"||mode==="profile";showProxyChoice(); }
@@ -206,12 +242,21 @@
 	async function useRecommendedLocation(){if(!pendingLocation)return;if(!proxyProfiles.length){$('scanProxyMessage').textContent="请先在代理设置中添加品赞或巨量配置";return;}$('scanProxyMode').value="profile";toggleProxyFields();$('scanProvince').value=pendingLocation.province_code;if($('scanProvince').value!==pendingLocation.province_code){$('scanProxyMessage').textContent=`省份 ${pendingLocation.province} 不在当前代理地区列表中`;return;}await loadScanCities(pendingLocation.province_code);$('scanCity').value=pendingLocation.city_code||"";const place=[pendingLocation.province,pendingLocation.city].filter(Boolean).join(" · ");hideLocationSuggestion();$('scanProxyMessage').textContent=`已预填 ${place}，点击“应用到授权”后生效`;}
 	function normalizeLocationName(value){return String(value||"").replace(/壮族自治区|回族自治区|维吾尔自治区|特别行政区|自治区|省|市/g,"").trim().toLowerCase();}
     async function testProxy(){ const button=$('scanProxyTestBtn'); button.disabled=true; $('scanProxyMessage').textContent="正在提取并校验代理"; try{const payload=proxyPayload(),result=await api("POST","/accounts/proxy/test",payload);if(!result.resolved){$('scanProxyMessage').textContent="直连模式无需代理";return;}const exit=[result.exit_region,result.exit_city].filter(Boolean).join(" · ");const requested=[payload.region_province,payload.region_city].filter(Boolean).join(" · ");const cityMatches=!payload.region_city||normalizeLocationName(result.exit_city)===normalizeLocationName(payload.region_city);const regionMatches=!payload.region_province||normalizeLocationName(result.exit_region)===normalizeLocationName(payload.region_province);$('scanProxyMessage').textContent=exit?`代理解析成功：${result.proxy}；实际出口：${exit}${requested&&(!cityMatches||!regionMatches)?`，与目标 ${requested} 不一致，请勿直接应用`:""}`:`代理解析成功：${result.proxy}${result.probe_error?`；${result.probe_error}`:""}`;}catch(error){$('scanProxyMessage').textContent=`代理测试失败：${error.message}`;}finally{button.disabled=false;} }
-    function applyProxy(){ stopTimers(); sid=null; quickConfig=null; quickPort=null; quickProfile=null; $('scanProxyMessage').textContent="代理配置已应用到新的授权会话"; const quick=$('quickModeBtn').getAttribute('aria-selected')==='true'; if(quick)detectQuickLogin();else newQR(); }
+    function applyProxy(){ stopTimers(); sid=null; quickConfig=null; quickPort=null; quickProfile=null; $('scanProxyMessage').textContent="代理配置已应用到新的授权会话"; if(window.ScanMulti&&ScanMulti.active()){ScanMulti.restart();return;} const quick=$('quickModeBtn').getAttribute('aria-selected')==='true'; if(quick)detectQuickLogin();else newQR(); }
     function setStatus(text,type="pending"){ $("status").textContent=text; $("status").className=`status ${type}`; }
     function setQRWaiting(label="等待手机确认授权"){ const wrap=$("qrWrap"); wrap.classList.add("waiting-confirm"); wrap.dataset.waitingLabel=label; }
     function clearQRWaiting(){ const wrap=$("qrWrap"); wrap.classList.remove("waiting-confirm"); delete wrap.dataset.waitingLabel; }
     function setMessage(text,type=""){ $("actionMessage").textContent=text; $("actionMessage").className=`message ${type}`; }
-    function showMode(mode){ const quick=mode==="quick"; $("quickPane").hidden=!quick; $("qrPane").hidden=quick; $("quickModeBtn").setAttribute("aria-selected",String(quick)); $("qrModeBtn").setAttribute("aria-selected",String(!quick)); if(quick){stopTimers();sid=null;if(!quickConfig&&!quickBusy)detectQuickLogin();}else if(!sid){newQR();} }
+    async function copyText(value,fallbackInput=null){
+      const text=String(value??'');
+      if(!text) throw new Error('empty text');
+      if(window.isSecureContext&&navigator.clipboard?.writeText){try{await navigator.clipboard.writeText(text);return true}catch{}}
+      let input=fallbackInput,temporary=false;
+      if(!input){input=document.createElement('textarea');temporary=true;input.setAttribute('readonly','');input.style.position='fixed';input.style.left='-9999px';input.style.top='0';input.style.opacity='0';input.value=text;document.body.appendChild(input)}else if('value' in input){input.value=text}
+      input.focus();input.select();input.setSelectionRange(0,text.length);let copied=false;try{copied=document.execCommand('copy')}catch{}
+      if(temporary&&copied)input.remove();if(temporary&&!copied)setTimeout(()=>input.remove(),15000);if(!copied)throw new Error('clipboard unavailable');return true;
+    }
+    function showMode(mode){ const quick=mode==="quick" && PC_LOGIN_ENABLED; $("quickPane").hidden=!quick; $("qrPane").hidden=quick; $("quickModeBtn").setAttribute("aria-selected",String(quick)); $("qrModeBtn").setAttribute("aria-selected",String(!quick)); if(quick){stopTimers();sid=null;if(!quickConfig&&!quickBusy)detectQuickLogin();}else if(!sid){newQR();} }
     function resetAccount(){ account=null; $("accountBox").classList.remove("visible"); $("accountPlaceholder").hidden=false; setMessage(""); }
     function showAccount(nextAccount){ account=nextAccount; $("accountName").textContent=account.remark||account.nickname||account.alias||account.openid; $("accountId").textContent=String(account.id); $("accountOpenid").textContent=account.openid||"-"; $("accountStatus").textContent=account.status||"unknown"; $("remarkInput").value=account.remark||""; $("accountPlaceholder").hidden=true; $("accountBox").classList.add("visible"); }
     function setQuickState(name,detail,avatar){ $("quickName").textContent=name; $("quickDetail").textContent=detail; if(avatar){ const img=document.createElement("img"); img.className="quick-avatar"; img.alt="微信头像"; img.src=avatar; $("quickAvatar").replaceWith(img); img.id="quickAvatar"; }else if($("quickAvatar").tagName==="IMG"){ const div=document.createElement("div"); div.className="quick-avatar"; div.id="quickAvatar"; div.textContent="微"; $("quickAvatar").replaceWith(div); } }
@@ -222,15 +267,33 @@
     function authorizePosition(){ const width=360,height=263,left=window.screenX||window.screenLeft||0,top=window.screenY||window.screenTop||0; return {x:Math.round(left+(window.outerWidth||window.innerWidth)/2-width/2),y:Math.round(top+(window.outerHeight||window.innerHeight)/2-height/2)}; }
 	async function authorizeQuick(){ if(!quickConfig||!quickPort||!quickProfile||quickBusy)return; quickBusy=true; const button=$("quickAuthBtn"); button.disabled=true; button.textContent="等待微信确认"; resetAccount(); try{ const result=await localWechat(quickPort,"/api/authorize",{apiname:"qrconnectfastauthorize",jsdata:{data:JSON.stringify(authorizePosition()),appid:quickConfig.appid,scope:quickConfig.scope,redirect_uri:quickConfig.redirect_uri,state:quickConfig.state,authorize_uuid:quickProfile.authorize_uuid}},120000); const errcode=Number(result?.errcode); if(errcode===10050) throw new Error("已在微信中拒绝授权，请重新检测"); if(errcode===10046) throw new Error("授权已超时，请重新检测"); if(errcode===10057){ showMode("qr"); throw new Error("当前应用仅支持扫码授权"); } if(errcode!==0||!result?.jsdata?.redirect_url) throw new Error("桌面微信未返回有效授权结果，请重新检测"); setQuickState("授权成功","正在保存账号",quickProfile.headimgurl||""); const nextAccount=await api("POST",`/quick-login/${quickConfig.session_id}/confirm`,{redirect_url:result.jsdata.redirect_url}); showAccount(nextAccount); setQuickState("账号添加成功",nextAccount.remark||nextAccount.nickname||nextAccount.openid,quickProfile.headimgurl||"");$('scanProxyMessage').textContent=`授权完成。新账号使用 ${proxyChoiceLabel()}，已有账号保留原代理。`; }catch(error){ setQuickState("快速授权失败",error.message,quickProfile?.headimgurl||""); quickConfig=null; quickPort=null; quickProfile=null; }finally{quickBusy=false;button.disabled=!quickConfig;button.textContent="使用本机微信授权";} }
     function startCountdown(){ seconds=QR_TTL; $("countdown").textContent=`二维码 ${seconds}s 后自动刷新`; countdownTimer=setInterval(()=>{ seconds-=1; $("countdown").textContent=seconds>0?`二维码 ${seconds}s 后自动刷新`:"二维码已过期，正在刷新"; if(seconds<=0){stopTimers();newQR();} },1000); }
-    async function newQR(){ stopTimers(); resetAccount(); sid=null; clearQRWaiting(); $("qrWrap").textContent="正在生成二维码"; $("countdown").textContent=""; setStatus("正在获取二维码"); try{ const result=await api("POST","/qr?as_base64=true",proxyPayload()); sid=result.session_id; clearQRWaiting(); const source=result.image_base64||`${result.image_url}?t=${Date.now()}`; $("qrWrap").innerHTML=`<img src="${source}" alt="微信登录二维码">`; const image=$("qrWrap").querySelector("img"); image.addEventListener("error",()=>{ $("qrWrap").textContent="二维码图片加载失败，请检查反向代理是否转发 /qr/* 路径"; setStatus("二维码会话已创建，但图片无法加载","error"); }); setStatus(result.proxy?`等待扫码 · ${result.proxy}`:"等待扫码"); startCountdown(); pollTimer=setInterval(poll,1500); }catch(error){setStatus(`获取二维码失败：${error.message}`,"error");} }
-    async function poll(){ if(!sid)return; try{ const result=await api("GET",`/qr/${sid}/poll`); if(result.status==="pending"){clearQRWaiting();setStatus("等待扫码");} else if(result.status==="scanned"){setQRWaiting();setStatus("已扫码，请在手机上确认授权","scanned");} else if(result.status==="authorized"||result.status==="confirmed"){setQRWaiting("正在完成授权");stopTimers();confirm();} else if(result.status==="expired"||result.status==="unknown"){stopTimers();setStatus("二维码已失效，正在重新生成","error");newQR();} else if(result.status==="cancelled"){stopTimers();clearQRWaiting();setStatus("已取消，请重新生成二维码","error");} }catch{} }
-	async function confirm(){ $("countdown").textContent=""; setQRWaiting("正在保存账号"); setStatus("授权成功，正在保存账号","scanned"); try{ const nextAccount=await api("POST",`/qr/${sid}/confirm`); showAccount(nextAccount); clearQRWaiting(); $("qrWrap").innerHTML='<span class="check">✓</span>'; setStatus(`账号添加成功 · ${proxyChoiceLabel()}（已有账号保留原配置）`,"ok"); }catch(error){clearQRWaiting();setStatus(`保存账号失败：${error.message}`,"error");} }
+    async function retireQR(){ const previous=sid; sid=null; if(!previous)return; try{ await api("POST",`/qr/${previous}/cancel`); }catch{} }
+    async function newQR(){ const generation=++qrGeneration;stopTimers();await retireQR();if(generation!==qrGeneration)return;resetAccount();clearQRWaiting();$("qrWrap").textContent="正在生成二维码";$("countdown").textContent="";setStatus("正在获取二维码");try{const result=await api("POST","/qr?as_base64=true",proxyPayload());if(generation!==qrGeneration){api('POST',`/qr/${result.session_id}/cancel`).catch(()=>{});return;}sid=result.session_id;clearQRWaiting();const image=document.createElement('img');image.src=result.image_base64||`${result.image_url}?t=${Date.now()}`;image.alt='微信登录二维码';image.addEventListener('error',()=>{if(generation===qrGeneration)setStatus('二维码图片加载失败，请重新生成','error');});$('qrWrap').replaceChildren(image);setStatus(result.proxy?`等待扫码 · ${result.proxy}`:'等待扫码');startCountdown();pollTimer=setInterval(poll,1500);}catch(error){if(generation===qrGeneration)setStatus(`获取二维码失败：${error.message}`,'error');}}
+    async function poll(){ const current=sid,generation=qrGeneration;if(!current||pollBusy===current)return;pollBusy=current;try{const result=await api('GET',`/qr/${current}/poll`);if(current!==sid||generation!==qrGeneration)return;if(result.status==='pending'){clearQRWaiting();setStatus('等待扫码');}else if(result.status==='scanned'){setQRWaiting();setStatus('已扫码，请在手机上确认授权','scanned');}else if(result.status==='authorized'||result.status==='confirmed'){setQRWaiting('正在完成授权');stopTimers();confirm(current,generation);}else if(['expired','unknown'].includes(result.status)){stopTimers();newQR();}else if(result.status==='cancelled'){stopTimers();clearQRWaiting();setStatus('已取消，请重新生成二维码','error');}}catch{if(current===sid&&generation===qrGeneration)setStatus('网络暂时波动，正在自动重试');}finally{if(pollBusy===current)pollBusy=false;}}
+	async function confirm(current=sid,generation=qrGeneration,attempt=0){if(!current||current!==sid||generation!==qrGeneration)return;$('countdown').textContent='';setQRWaiting('正在保存账号');setStatus('授权成功，正在保存账号','scanned');try{const nextAccount=await api('POST',`/qr/${current}/confirm`);if(current!==sid||generation!==qrGeneration)return;showAccount(nextAccount);clearQRWaiting();$('qrWrap').innerHTML='<span class="check">✓</span>';setStatus('账号已自动保存','ok');}catch(error){if(current!==sid||generation!==qrGeneration)return;if((error.status===409||error.status===502)&&attempt<11){setStatus('授权已确认，正在自动完成账号保存','scanned');setTimeout(()=>confirm(current,generation,attempt+1),1500);return;}clearQRWaiting();setStatus(`保存账号失败：${error.message}，请重新生成二维码`,'error');}}
     async function saveRemark(silent=false){ if(!account)return false; const button=$("saveRemarkBtn"); button.disabled=true; try{ const result=await api("PUT","/accounts/remark",{ref:String(account.id),remark:$("remarkInput").value}); account=result.account; if(!silent) setMessage(result.warning||"备注已保存",result.warning?"error":"ok"); return true; }catch(error){setMessage(`备注保存失败：${error.message}`,"error"); return false;}finally{button.disabled=false;} }
-	async function syncAccount(){ if(!account)return; const button=$("syncBtn"); button.disabled=true; button.textContent="正在添加"; setMessage("正在保存备注并同步面板"); try{ if(!await saveRemark(true))return; const result=await api("POST","/api/qinglong/sync",{ref:String(account.id)}); setMessage(result.added?`已添加到面板 YYB_SERVER：账号 ${account.id}`:`面板 YYB_SERVER 已包含账号 ${account.id}，无需重复添加`,"ok"); button.textContent="已添加到面板"; }catch(error){ setMessage(error.message.includes("配置")?"尚未配置自动化面板，请返回控制台填写连接信息。":`同步失败：${error.message}`,"error"); button.textContent="添加到面板"; }finally{button.disabled=false;} }
-	$("scanProxyMode").addEventListener("change",toggleProxyFields); $("scanProxyProfile").addEventListener("change",showProxyChoice); $("scanProvince").addEventListener("change",event=>loadScanCities(event.target.value).catch(error=>$('scanProxyMessage').textContent=`城市列表读取失败：${error.message}`)); $("scanCity").addEventListener("change",showProxyChoice); $("scanLocationBtn").addEventListener("click",recommendLocation); $("scanLocationUseBtn").addEventListener("click",()=>useRecommendedLocation().catch(error=>$('scanProxyMessage').textContent=`采用推荐失败：${error.message}`)); $("scanLocationDismissBtn").addEventListener("click",hideLocationSuggestion); $("scanProxyTestBtn").addEventListener("click",testProxy); $("scanProxyApplyBtn").addEventListener("click",applyProxy); $("quickModeBtn").addEventListener("click",()=>showMode("quick")); $("qrModeBtn").addEventListener("click",()=>showMode("qr")); $("quickAuthBtn").addEventListener("click",authorizeQuick); $("quickRetryBtn").addEventListener("click",detectQuickLogin); $("refreshBtn").addEventListener("click",newQR); $("backBtn").addEventListener("click",()=>{stopTimers();location.href="/";}); $("saveRemarkBtn").addEventListener("click",()=>saveRemark()); $("syncBtn").addEventListener("click",syncAccount); $("copyBtn").addEventListener("click",async()=>{ try{await navigator.clipboard.writeText(account?.openid||"");setMessage("OpenID 已复制","ok");}catch{setMessage("复制失败，请手动选择 OpenID","error");} });
+	async function syncAccount(){ if(!account)return; const button=$("syncBtn"); button.disabled=true; button.textContent="正在添加"; setMessage("正在保存备注并同步面板"); try{ if(!await saveRemark(true))return; const multi=!!(window.ScanMulti&&ScanMulti.active()),syncRef=multi&&ScanMulti.syncRef()||String(account.id); const result=await api("POST","/api/qinglong/sync",{ref:syncRef}); setMessage(result.added?`已添加到面板 YYB_SERVER：账号 ${syncRef}${multi?"（主账号，其余渠道自动轮换）":""}`:`面板 YYB_SERVER 已包含账号 ${syncRef}，无需重复添加`,"ok"); button.textContent="已添加到面板"; }catch(error){ setMessage(error.message.includes("配置")?"尚未配置自动化面板，请返回控制台填写连接信息。":`同步失败：${error.message}`,"error"); button.textContent="添加到面板"; }finally{button.disabled=false;} }
+	applyAuthModeUI();
+	$("scanProxyMode").addEventListener("change",toggleProxyFields); $("scanProxyProfile").addEventListener("change",showProxyChoice); $("scanProvince").addEventListener("change",event=>loadScanCities(event.target.value).catch(error=>$('scanProxyMessage').textContent=`城市列表读取失败：${error.message}`)); $("scanCity").addEventListener("change",showProxyChoice); $("scanLocationBtn").addEventListener("click",recommendLocation); $("scanLocationUseBtn").addEventListener("click",()=>useRecommendedLocation().catch(error=>$('scanProxyMessage').textContent=`采用推荐失败：${error.message}`)); $("scanLocationDismissBtn").addEventListener("click",hideLocationSuggestion); $("scanProxyTestBtn").addEventListener("click",testProxy); $("scanProxyApplyBtn").addEventListener("click",applyProxy); $("quickModeBtn").addEventListener("click",()=>showMode("quick")); $("qrModeBtn").addEventListener("click",()=>showMode("qr")); $("quickAuthBtn").addEventListener("click",authorizeQuick); $("quickRetryBtn").addEventListener("click",detectQuickLogin); $("refreshBtn").addEventListener("click",newQR); $("backBtn").addEventListener("click",async()=>{stopTimers();await retireQR();if(window.ScanMulti)await ScanMulti.stopAll();location.href="/";}); $("saveRemarkBtn").addEventListener("click",()=>saveRemark()); $("syncBtn").addEventListener("click",syncAccount); $("copyBtn").addEventListener("click",async()=>{ try{await copyText(account?.openid||"");setMessage("OpenID 已复制","ok");}catch{setMessage("OpenID 已选中，请按 Ctrl+C 完成复制","error");} });
     toggleProxyFields();
-	initializeProxyOptions().finally(detectQuickLogin);
+	function channelMode(){
+		quickConfig=null;quickProfile=null;quickPort=null;
+		const quick=PC_LOGIN_ENABLED&&['appstore','qbbrowser'].includes($('scanProduct').value);
+		$('quickModeBtn').hidden=!quick;$('modeSwitch').hidden=!quick;
+		$('refreshBtn').textContent='重新生成';
+		$('authMethodDescription').textContent=quick?'可选择本机微信确认或手机扫码':'请用手机微信扫一扫完成授权';
+		$('qrModeNote').hidden=true;
+	}
+	$('scanProduct').addEventListener('change',async()=>{await stopSingle();channelMode();$('quickPane').hidden=true;$('qrPane').hidden=false;newQR();});
+	function fillChannelOptions(){const select=$('scanProduct'),current=select.value;select.replaceChildren(...scanChannels().map(channel=>{const option=document.createElement('option');option.value=channel.id;option.textContent=channel.name;return option;}));if([...select.options].some(option=>option.value===current))select.value=current;}
+	async function stopSingle(){qrGeneration+=1;stopTimers();quickConfig=null;quickPort=null;quickProfile=null;await retireQR();}
+	function startSingle(){channelMode();showMode(PC_LOGIN_ENABLED&&['appstore','qbbrowser'].includes($('scanProduct').value)?'quick':'qr');}
+	loadScanChannels().then(fillChannelOptions)
+		.then(()=>Promise.all([initializeProxyOptions(),api('GET','/api/scan-settings').then(settings=>{$('scanProduct').value=settings.effective;})]))
+		.catch(error=>setStatus(error.message,'error'))
+		.then(()=>window.ScanMulti?ScanMulti.init({api,proxyPayload,showAccount,stopSingle,startSingle}):startSingle())
+		.catch(error=>{setStatus(error.message,'error');startSingle();});
   </script>
-  <script src="/static/js/platform.js?v=20260824-push1"></script>
+  <script src="/static/js/platform.js?v=20261103-skin"></script>
 </body>
 </html>

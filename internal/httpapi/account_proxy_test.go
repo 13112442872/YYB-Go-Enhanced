@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -59,6 +60,13 @@ func TestProxySettingPublicUsesAccountTokenTTL(t *testing.T) {
 	result := proxySettingPublic(setting, account)
 	if result["token_ttl_minutes"] != int64(90) {
 		t.Fatalf("token_ttl_minutes = %#v, want 90", result["token_ttl_minutes"])
+	}
+	if result["keepalive_supported"] != false || result["lifetime_class"] != "short" || result["proxy_warning"] == "" {
+		t.Fatalf("dynamic proxy status = %#v, want explicit short-lived warning", result)
+	}
+	stable := proxySettingPublic(&store.AccountProxySetting{AccountID: 7, Mode: "static", ProxyType: "http"}, account)
+	if stable["keepalive_supported"] != true || stable["proxy_warning"] != "" {
+		t.Fatalf("stable proxy status = %#v, want keepalive enabled without warning", stable)
 	}
 }
 
@@ -129,7 +137,7 @@ func TestDynamicProxyLeaseAvoidsRepeatedExtraction(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertAccount() error = %v", err)
 	}
-	if _, err := app.db.UpsertAccountProxySetting(context.Background(), account.ID, "api", "http", "", proxyAPI.URL, nil, "", "", "", 300); err != nil {
+	if _, err := app.db.UpsertAccountProxySetting(context.Background(), account.ID, "api", "http", "", proxyAPI.URL, nil, "", "", "", 300, nil); err != nil {
 		t.Fatalf("UpsertAccountProxySetting() error = %v", err)
 	}
 	for range 2 {
@@ -259,6 +267,49 @@ func TestJuliangProfilesSignEachAccountRegion(t *testing.T) {
 	}
 }
 
+func TestStaticProxyProfileCanBeSelectedAndReused(t *testing.T) {
+	t.Setenv("GIN_MODE", "test")
+	app, err := NewApp(Config{ResourceRoot: t.TempDir(), RequestTimeout: time.Second})
+	if err != nil {
+		t.Fatalf("NewApp() error = %v", err)
+	}
+	defer app.Close()
+	status := "alive"
+	account, err := app.db.UpsertAccount(context.Background(), "static-profile-openid", "buffer", nil, nil, nil, nil, nil, &status)
+	if err != nil {
+		t.Fatalf("UpsertAccount() error = %v", err)
+	}
+	handler := app.Handler()
+	created := apiRequest(t, handler, http.MethodPost, "/api/proxy-profiles", map[string]any{
+		"name": "家庭固定出口", "provider": "static", "proxy_type": "http",
+		"api_url": "user:pass@203.0.113.40:8080",
+	})
+	if created.Code != http.StatusCreated {
+		t.Fatalf("POST static profile status = %d body=%s", created.Code, created.Body.String())
+	}
+	var profileResponse struct {
+		Data store.ProxyProviderProfile `json:"data"`
+	}
+	if err := json.Unmarshal(created.Body.Bytes(), &profileResponse); err != nil || profileResponse.Data.ID == 0 {
+		t.Fatalf("decode static profile = %#v, %v", profileResponse, err)
+	}
+	saved := apiRequest(t, handler, http.MethodPut, "/accounts/proxy", map[string]any{
+		"ref": fmt.Sprint(account.ID), "provider_profile_id": profileResponse.Data.ID,
+		"refresh_ahead_minutes": 5,
+	})
+	if saved.Code != http.StatusOK {
+		t.Fatalf("PUT static profile selection status = %d body=%s", saved.Code, saved.Body.String())
+	}
+	setting, err := app.db.GetAccountProxySetting(context.Background(), account.ID)
+	if err != nil || setting.Mode != "static" || setting.ProviderProfileID == nil {
+		t.Fatalf("static profile setting = %#v, %v", setting, err)
+	}
+	spec, err := app.proxySpecForSetting(context.Background(), setting)
+	if err != nil || spec.Mode != "static" || !strings.Contains(spec.StaticProxy, "203.0.113.40:8080") {
+		t.Fatalf("resolved static profile spec = %#v, %v", spec, err)
+	}
+}
+
 func TestExistingAccountRescanPreservesProxySetting(t *testing.T) {
 	t.Setenv("GIN_MODE", "test")
 	app, err := NewApp(Config{ResourceRoot: t.TempDir(), RequestTimeout: time.Second})
@@ -275,7 +326,8 @@ func TestExistingAccountRescanPreservesProxySetting(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateProxyProviderProfile() error = %v", err)
 	}
-	if _, err := app.db.UpsertAccountProxySetting(context.Background(), account.ID, "api", "http", "", "", &profile.ID, "370100", "山东省", "济南市", 300); err != nil {
+	policy := "direct"
+	if _, err := app.db.UpsertAccountProxySetting(context.Background(), account.ID, "api", "http", "", "", &profile.ID, "370100", "山东省", "济南市", 300, &policy); err != nil {
 		t.Fatalf("UpsertAccountProxySetting() error = %v", err)
 	}
 	direct, _ := proxysource.NormalizeSpec(proxysource.Spec{Mode: "direct"})
@@ -283,7 +335,7 @@ func TestExistingAccountRescanPreservesProxySetting(t *testing.T) {
 		t.Fatalf("saveNewAccountProxy() error = %v", err)
 	}
 	setting, err := app.db.GetAccountProxySetting(context.Background(), account.ID)
-	if err != nil || setting.ProviderProfileID == nil || *setting.ProviderProfileID != profile.ID || setting.RegionCode != "370100" {
+	if err != nil || setting.ProviderProfileID == nil || *setting.ProviderProfileID != profile.ID || setting.RegionCode != "370100" || setting.ProtocolProxyMode != "direct" {
 		t.Fatalf("proxy after rescan = %#v, %v", setting, err)
 	}
 }
@@ -301,9 +353,9 @@ func TestWXAppCallUsesExistingLoginBufferBeforeRefreshing(t *testing.T) {
 		t.Fatalf("UpsertAccount() error = %v", err)
 	}
 	refreshCalls := 0
-	app.refreshLoginBuffer = func(context.Context, protocol.LoginBufferCredentials) (protocol.LoginBufferResult, error) {
+	app.refreshCredentials = func(context.Context, protocol.LoginBufferCredentials) (protocol.LoginBufferCredentials, error) {
 		refreshCalls++
-		return protocol.LoginBufferResult{}, errors.New("refresh should not run")
+		return protocol.LoginBufferCredentials{}, errors.New("refresh should not run")
 	}
 	callCount := 0
 	result, err := app.invokeWXApp(context.Background(), account, "wx0000000000000000", nil, func(context.Context, *store.WechatAccount, string, map[string]any, string, bool) (map[string]any, error) {
@@ -312,6 +364,91 @@ func TestWXAppCallUsesExistingLoginBufferBeforeRefreshing(t *testing.T) {
 	})
 	if err != nil || result["code"] != "ok" || callCount != 1 || refreshCalls != 0 {
 		t.Fatalf("invokeWXApp() result=%#v err=%v calls=%d refreshes=%d", result, err, callCount, refreshCalls)
+	}
+}
+
+func TestProtocolNetworkFailureDoesNotRefreshOrDiscardSession(t *testing.T) {
+	app, err := NewApp(Config{ResourceRoot: t.TempDir(), RequestTimeout: time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Close()
+	ctx := context.Background()
+	status := "alive"
+	account, err := app.db.UpsertAccount(ctx, "network-failure", "buffer", nil, nil, nil, nil, map[string]any{"refreshtoken": "refresh"}, &status)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := app.db.PutSession(ctx, account.ID, nil, map[string]any{"marker": "preserve"}, time.Now().Add(time.Hour).Unix(), ""); err != nil {
+		t.Fatal(err)
+	}
+	refreshes := 0
+	app.refreshCredentials = func(context.Context, protocol.LoginBufferCredentials) (protocol.LoginBufferCredentials, error) {
+		refreshes++
+		return protocol.LoginBufferCredentials{}, errors.New("unexpected refresh")
+	}
+	calls := 0
+	want := &net.OpError{Op: "read", Net: "tcp", Err: context.DeadlineExceeded}
+	_, err = app.invokeWXApp(ctx, account, "wx0000000000000000", nil, func(context.Context, *store.WechatAccount, string, map[string]any, string, bool) (map[string]any, error) {
+		calls++
+		return nil, fmt.Errorf("LongLink read: %w", want)
+	})
+	if !errors.Is(err, want) || calls != 1 || refreshes != 0 {
+		t.Fatalf("network failure caused credential recovery: calls=%d refreshes=%d err=%v", calls, refreshes, err)
+	}
+	if _, err := app.db.GetSession(ctx, account.ID, ""); err != nil {
+		t.Fatalf("discarded valid session: %v", err)
+	}
+	fresh, err := app.db.GetAccount(ctx, account.ID)
+	if err != nil || accountStatus(fresh) != "alive" {
+		t.Fatalf("network failure changed account state: %v", err)
+	}
+}
+
+func TestAccountOperationWaitCanBeCancelled(t *testing.T) {
+	for _, operation := range []string{"refresh", "proxy-lease"} {
+		t.Run(operation, func(t *testing.T) {
+			app, err := NewApp(Config{ResourceRoot: t.TempDir()})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer app.Close()
+			status := "alive"
+			account, err := app.db.UpsertAccount(context.Background(), "queue-test", "buffer", nil, nil, nil, nil, nil, &status)
+			if err != nil {
+				t.Fatal(err)
+			}
+			lock := app.refreshLockFor(account.ID)
+			if operation == "proxy-lease" {
+				_, err = app.db.UpsertAccountProxySetting(context.Background(), account.ID, "api", "http", "", "http://proxy.invalid/", nil, "", "", "", 300, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				lock = app.proxyLeaseLockFor(account.ID)
+			}
+			lock <- struct{}{}
+			defer func() { <-lock }()
+			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+			defer cancel()
+			done := make(chan error, 1)
+			go func() {
+				if operation == "refresh" {
+					_, _, err := app.refreshAccount(ctx, account, true)
+					done <- err
+				} else {
+					_, _, err := app.resolveAccountProxy(ctx, account.ID)
+					done <- err
+				}
+			}()
+			select {
+			case err := <-done:
+				if !errors.Is(err, context.DeadlineExceeded) {
+					t.Fatalf("queue error = %v", err)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("cancelled request remained queued")
+			}
+		})
 	}
 }
 
@@ -333,7 +470,7 @@ func TestExpiredAccountRejectsBeforeResolvingProxy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertAccount() error = %v", err)
 	}
-	if _, err := app.db.UpsertAccountProxySetting(context.Background(), account.ID, "api", "http", "", proxyAPI.URL, nil, "", "", "", 300); err != nil {
+	if _, err := app.db.UpsertAccountProxySetting(context.Background(), account.ID, "api", "http", "", proxyAPI.URL, nil, "", "", "", 300, nil); err != nil {
 		t.Fatalf("UpsertAccountProxySetting() error = %v", err)
 	}
 	callCount := 0

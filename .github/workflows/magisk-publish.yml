@@ -21,6 +21,20 @@ on:
       - main
     tags:
       - 'magisk-v*'
+    paths:
+      - 'go.mod'
+      - 'go.sum'
+      - 'VERSION'
+      - 'cmd/**'
+      - 'internal/**'
+      - 'resource/static/**'
+      - 'resource/templates/**'
+      - 'packaging/magisk/**'
+      - 'scripts/build-magisk.sh'
+      - 'tools/release_notes.py'
+      - 'tests/test_release_notes.py'
+      - 'CHANGELOG.md'
+      - '.github/workflows/magisk-publish.yml'
 
 permissions:
   contents: write
@@ -65,14 +79,12 @@ jobs:
             tag="magisk-v$version"
             publish="${INPUT_PUBLISH_RELEASE:-false}"
           else
-            version="dev-${GITHUB_SHA::7}"
+            version="$(tr -d '[:space:]' < VERSION)"
             tag=""
           fi
 
           if [[ "$version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
             calculated_code=$((10#${BASH_REMATCH[1]} * 1000000 + 10#${BASH_REMATCH[2]} * 1000 + 10#${BASH_REMATCH[3]}))
-          elif [[ "$version" == dev-* ]]; then
-            calculated_code=$((10000000 + GITHUB_RUN_NUMBER))
           else
             echo "Version must use x.y.z format: $version" >&2
             exit 2
@@ -91,15 +103,33 @@ jobs:
             echo "publish=$publish"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Generate Release Notes
+        if: steps.version.outputs.publish == 'true'
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+          MODULE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -Eeuo pipefail
+          python3 ./tools/release_notes.py \
+            --version "$MODULE_VERSION" \
+            --tag "$RELEASE_TAG" \
+            --kind magisk \
+            --repository "$GITHUB_REPOSITORY" \
+            --output "$RUNNER_TEMP/release-notes.md"
+          cat "$RUNNER_TEMP/release-notes.md"
+
       - name: Build and Validate ARM64 Module
         env:
           VERSION: ${{ steps.version.outputs.version }}
           VERSION_CODE: ${{ steps.version.outputs.version_code }}
+          COMMIT: ${{ github.sha }}
+          BUILD_DATE: ${{ github.event.head_commit.timestamp || '' }}
         run: |
           set -Eeuo pipefail
           go version
           command -v zip
           command -v unzip
+          python3 -m unittest tests.test_release_notes -v
           bash ./scripts/build-magisk.sh arm64
 
       - name: Publish GitHub Release
@@ -113,10 +143,13 @@ jobs:
           asset="dist/yyb-go-magisk-arm64-$MODULE_VERSION.zip"
 
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" \
+              --title "Magisk v$MODULE_VERSION" \
+              --notes-file "$RUNNER_TEMP/release-notes.md"
             gh release upload "$RELEASE_TAG" "$asset" --clobber
           else
             gh release create "$RELEASE_TAG" "$asset" \
               --target "$GITHUB_SHA" \
               --title "Magisk v$MODULE_VERSION" \
-              --generate-notes
+              --notes-file "$RUNNER_TEMP/release-notes.md"
           fi

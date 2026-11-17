@@ -94,7 +94,7 @@ func TestUnsupportedLoginProductDoesNotCreateSession(t *testing.T) {
 		request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"product":"pcmanager"}`))
 		request.Header.Set("Content-Type", "application/json")
 		app.Handler().ServeHTTP(recorder, request)
-		if recorder.Code != http.StatusUnprocessableEntity || !strings.Contains(recorder.Body.String(), "尚未完成凭据兑换验证") {
+		if recorder.Code != http.StatusUnprocessableEntity {
 			t.Fatalf("POST %s = %d %s", path, recorder.Code, recorder.Body.String())
 		}
 	}
@@ -103,7 +103,7 @@ func TestUnsupportedLoginProductDoesNotCreateSession(t *testing.T) {
 func newLocationTestApp(t *testing.T) *App {
 	t.Helper()
 	t.Setenv("GIN_MODE", "test")
-	app, err := NewApp(Config{ResourceRoot: t.TempDir(), RequestTimeout: time.Second})
+	app, err := NewApp(Config{ResourceRoot: t.TempDir(), RequestTimeout: time.Second, EnablePCLogin: true})
 	if err != nil {
 		t.Fatalf("NewApp() error = %v", err)
 	}

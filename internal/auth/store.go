@@ -130,6 +130,15 @@ type Session struct {
 }
 
 func Open(ctx context.Context, driver, dsn string) (*Store, error) {
+	return open(ctx, driver, dsn, true)
+}
+
+// OpenExisting skips schema initialization for local recovery commands.
+func OpenExisting(ctx context.Context, driver, dsn string) (*Store, error) {
+	return open(ctx, driver, dsn, false)
+}
+
+func open(ctx context.Context, driver, dsn string, migrate bool) (*Store, error) {
 	driver = strings.ToLower(strings.TrimSpace(driver))
 	if driver != "mysql" && driver != "sqlite" {
 		return nil, fmt.Errorf("unsupported auth database driver %q", driver)
@@ -148,6 +157,9 @@ func Open(ctx context.Context, driver, dsn string) (*Store, error) {
 	if err = db.PingContext(ctx); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("connect auth %s: %w", driver, err)
+	}
+	if !migrate {
+		return &Store{db: db, driver: driver}, nil
 	}
 	schema := mysqlSchema
 	if driver == "sqlite" {
@@ -494,6 +506,41 @@ func (s *Store) AdminResetPassword(ctx context.Context, id int64, password strin
 	return tx.Commit()
 }
 
+// RecoverAdminPassword is only exposed through the local command line. It must
+// never create a user, promote a member, or re-enable a disabled administrator.
+func (s *Store) RecoverAdminPassword(ctx context.Context, username, password string) error {
+	if err := ValidatePassword(password); err != nil {
+		return err
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), 12)
+	if err != nil {
+		return err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var id int64
+	if err = tx.QueryRowContext(ctx, "SELECT id FROM users WHERE username=? AND role='admin' AND enabled=TRUE", normalizeUsername(username)).Scan(&id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errors.New("未找到该名称的启用管理员；请核对用户名和认证数据库配置")
+		}
+		return err
+	}
+	result, err := tx.ExecContext(ctx, "UPDATE users SET password_hash=?, updated_at=? WHERE id=? AND role='admin' AND enabled=TRUE", string(hash), time.Now().UTC(), id)
+	if err != nil {
+		return err
+	}
+	if affected, err := result.RowsAffected(); err != nil || affected != 1 {
+		return errors.New("管理员状态已变化，密码未重置")
+	}
+	if _, err = tx.ExecContext(ctx, "DELETE FROM user_sessions WHERE user_id=?", id); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 func (s *Store) DeleteUser(ctx context.Context, actorID, id int64) error {
 	if actorID == id {
 		return errors.New("不能删除当前登录用户")
@@ -528,6 +575,22 @@ func (s *Store) AccountOwner(ctx context.Context, accountID int64) (int64, error
 	var userID int64
 	err := s.db.QueryRowContext(ctx, "SELECT user_id FROM account_owners WHERE account_id=?", accountID).Scan(&userID)
 	return userID, err
+}
+
+// Remove a known ownership claim before an explicit account merge releases ID.
+func (s *Store) RemoveAccountOwner(ctx context.Context, accountID, expectedUserID int64) error {
+	result, err := s.db.ExecContext(ctx, "DELETE FROM account_owners WHERE account_id=? AND user_id=?", accountID, expectedUserID)
+	if err != nil {
+		return err
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n != 1 {
+		return sql.ErrNoRows
+	}
+	return nil
 }
 
 func (s *Store) AccountCounts(ctx context.Context) (map[int64]int, error) {
@@ -566,6 +629,83 @@ func (s *Store) AccountIDs(ctx context.Context, userID int64) (map[int64]struct{
 		ids[accountID] = struct{}{}
 	}
 	return ids, rows.Err()
+}
+
+// RemapAccountIDs updates ownership records after the YYB account database
+// compacts its primary keys. Ownership lives in a separate database, so this
+// operation is intentionally explicit and collision-safe. liveIDs is the full
+// account list before the move, including accounts whose ID does not change.
+func (s *Store) RemapAccountIDs(ctx context.Context, mapping map[int64]int64, liveIDs []int64) error {
+	if len(mapping) == 0 {
+		return nil
+	}
+	live := make(map[int64]bool, len(liveIDs))
+	for _, id := range liveIDs {
+		if id <= 0 {
+			return errors.New("invalid live account ID")
+		}
+		live[id] = true
+	}
+	targets := make(map[int64]bool, len(liveIDs))
+	for oldID, newID := range mapping {
+		if !live[oldID] || newID <= 0 {
+			return errors.New("invalid account ID mapping")
+		}
+	}
+	for oldID := range live {
+		newID, moved := mapping[oldID]
+		if !moved {
+			newID = oldID
+		}
+		if targets[newID] {
+			return errors.New("duplicate account ID mapping target")
+		}
+		targets[newID] = true
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	// Older account deletion left ownership in this separate database. Such
+	// orphan rows can occupy a destination ID (or a temporary negative ID).
+	// Only remove rows absent from the complete, pre-move account list.
+	rows, err := tx.QueryContext(ctx, "SELECT account_id FROM account_owners")
+	if err != nil {
+		return err
+	}
+	var orphanIDs []int64
+	for rows.Next() {
+		var id int64
+		if err = rows.Scan(&id); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		if !live[id] {
+			orphanIDs = append(orphanIDs, id)
+		}
+	}
+	err = rows.Err()
+	_ = rows.Close()
+	if err != nil {
+		return err
+	}
+	for _, id := range orphanIDs {
+		if _, err = tx.ExecContext(ctx, "DELETE FROM account_owners WHERE account_id=?", id); err != nil {
+			return err
+		}
+	}
+	for oldID := range mapping {
+		if _, err = tx.ExecContext(ctx, "UPDATE account_owners SET account_id=? WHERE account_id=?", -oldID, oldID); err != nil {
+			return err
+		}
+	}
+	for oldID, newID := range mapping {
+		if _, err = tx.ExecContext(ctx, "UPDATE account_owners SET account_id=? WHERE account_id=?", newID, -oldID); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func (s *Store) RegistrationEnabled(ctx context.Context) (bool, error) {

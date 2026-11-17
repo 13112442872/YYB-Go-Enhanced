@@ -1,5 +1,7 @@
 package httpapi
 
+import "strings"
+
 func wxAliasOperation(summary, requestSchema, responseSchema string) map[string]any {
 	return map[string]any{
 		"post": openAPIOperation(
@@ -11,11 +13,11 @@ func wxAliasOperation(summary, requestSchema, responseSchema string) map[string]
 }
 
 func newOpenAPISpec() map[string]any {
-	return map[string]any{
+	spec := map[string]any{
 		"openapi": "3.0.3",
 		"info": map[string]any{
 			"title":       "YYB Go 接口文档",
-			"description": "用于微信扫码登录、账号管理和 wxapp 接口调用的 API。",
+			"description": "用于微信扫码登录、账号管理和 wxapp 接口调用的 API。配置 YYB_PROTOCOL_TOKEN 时，点击 Authorize 填入令牌（不含 Bearer 前缀）；仅协议接口携带该请求头。未配置时可留空。管理接口仍需网页登录。",
 			"version":     "1.0.0",
 		},
 		"servers": []map[string]any{
@@ -24,9 +26,10 @@ func newOpenAPISpec() map[string]any {
 		"tags": []map[string]any{
 			{"name": "health", "description": "服务健康检查"},
 			{"name": "qr", "description": "微信扫码登录"},
+			{"name": "account-links", "description": "一次性账号扫码授权链接"},
 			{"name": "quick-login", "description": "桌面微信快速授权"},
 			{"name": "accounts", "description": "已保存的微信账号"},
-			{"name": "proxy-profiles", "description": "可复用的品赞代理配置与地区"},
+			{"name": "proxy-profiles", "description": "可复用的品赞、巨量和静态代理配置与地区"},
 			{"name": "qinglong", "description": "账号级自动化面板任务与推送管理（兼容青龙、呆呆和 Arcadia）"},
 			{"name": "wxapp", "description": "wxapp 业务接口调用"},
 			{"name": "wx", "description": "兼容 /wx/* 的微信业务接口"},
@@ -43,6 +46,26 @@ func newOpenAPISpec() map[string]any {
 						"200": jsonResponse("服务正常。", refSchema("HealthResponse")),
 					}),
 				),
+			},
+			"/api/version": map[string]any{
+				"get": openAPIOperation(
+					[]string{"health"},
+					"读取当前构建版本信息",
+					nil,
+					nil,
+					defaulted(map[string]any{
+						"200": jsonResponse("版本、commit 和构建时间。", freeFormObjectSchema("version、commit、build_date、update_url。")),
+					}),
+				),
+			},
+			"/api/scan-settings": map[string]any{
+				"get": openAPIOperation([]string{"qr"}, "读取系统、个人与当前生效的默认扫码渠道", nil, nil,
+					defaulted(map[string]any{"200": jsonResponse("默认渠道及管理权限，需网页登录。", freeFormObjectSchema("global、personal、effective、can_manage_global、has_personal_account。"))})),
+				"put": openAPIOperation([]string{"qr"}, "设置默认扫码渠道", nil,
+					jsonRequestBody(objectSchema([]string{"scope", "product"}, map[string]any{
+						"scope":   map[string]any{"type": "string", "enum": []string{"personal", "global"}},
+						"product": map[string]any{"type": "string", "enum": []string{"", "appstore", "pcmgr", "gameassist"}, "description": "个人空值表示跟随系统；global 仅管理员可修改。"},
+					})), defaulted(map[string]any{"200": jsonResponse("保存后的设置。", freeFormObjectSchema("生效渠道及管理权限。"))})),
 			},
 			"/qr": map[string]any{
 				"post": openAPIOperation(
@@ -79,6 +102,17 @@ func newOpenAPISpec() map[string]any {
 					}),
 				),
 			},
+			"/qr/{session_id}/cancel": map[string]any{
+				"post": openAPIOperation(
+					[]string{"qr"},
+					"取消扫码登录会话",
+					[]map[string]any{pathStringParam("session_id", "二维码会话 ID。")},
+					nil,
+					defaulted(map[string]any{
+						"200": jsonResponse("扫码会话已取消。", freeFormObjectSchema("取消结果。")),
+					}),
+				),
+			},
 			"/qr/{session_id}/confirm": map[string]any{
 				"post": openAPIOperation(
 					[]string{"qr"},
@@ -112,14 +146,69 @@ func newOpenAPISpec() map[string]any {
 					}),
 				),
 			},
+			"/api/account-links": map[string]any{
+				"post": openAPIOperation(
+					[]string{"account-links"},
+					"生成一次性账号扫码授权链接",
+					nil,
+					jsonRequestBody(freeFormObjectSchema("kind=update 或 add；ref 为基础账号 ID/UIN/OpenID；ttl_seconds 可选，范围 60-604800。allow_multi_channel 默认 false，开启后同一微信可授权多个渠道，逐个保存并归组，点击 finish 或原有效期结束后关闭链接。product 为单渠道或初始渠道，单渠道 update 跨渠道需 confirm_switch=true。")),
+					defaulted(map[string]any{
+						"200": jsonResponse("授权链接。数据库用 SHA-256 校验令牌，并加密保存可恢复地址。", freeFormObjectSchema("url、expires_at、one_time、allow_multi_channel。")),
+					}),
+				),
+			},
+			"/account-link/{token}": map[string]any{
+				"get": openAPIOperation(
+					[]string{"account-links"},
+					"打开一次性扫码授权页面",
+					[]map[string]any{pathStringParam("token", "随机不可逆 bearer token。")},
+					nil,
+					defaulted(map[string]any{"200": htmlResponse("扫码授权页面。")}),
+				),
+			},
+			"/account-link/{token}/qr": map[string]any{
+				"post": openAPIOperation(
+					[]string{"account-links"},
+					"为一次性授权链接创建二维码",
+					[]map[string]any{pathStringParam("token", "随机不可逆 bearer token。")},
+					jsonOptionalRequestBody(objectSchema(nil, map[string]any{"product": map[string]any{"type": "string", "enum": []string{"appstore", "pcmgr", "gameassist"}, "description": "扫码渠道。多渠道链接按同一微信归组；单渠道更新切换需 confirm_switch。"}, "confirm_switch": map[string]any{"type": "boolean"}})),
+					defaulted(map[string]any{"200": jsonResponse("二维码会话。", refSchema("QRCreateResponse"))}),
+				),
+			},
+			"/account-link/{token}/qr/{session_id}/poll": map[string]any{
+				"get": openAPIOperation(
+					[]string{"account-links"},
+					"轮询一次性授权二维码",
+					[]map[string]any{pathStringParam("token", "随机不可逆 bearer token。"), pathStringParam("session_id", "二维码会话 ID。")},
+					nil,
+					defaulted(map[string]any{"200": jsonResponse("扫码状态。", refSchema("QRPollResponse"))}),
+				),
+			},
+			"/account-link/{token}/qr/{session_id}/confirm": map[string]any{
+				"post": openAPIOperation(
+					[]string{"account-links"},
+					"确认一次性授权并更新或新增账号",
+					[]map[string]any{pathStringParam("token", "随机不可逆 bearer token。"), pathStringParam("session_id", "二维码会话 ID。")},
+					nil,
+					defaulted(map[string]any{"200": jsonResponse("保存后的账号。", refSchema("AccountPublic"))}),
+				),
+			},
+			"/account-link/{token}/meta": map[string]any{
+				"get": openAPIOperation([]string{"account-links"}, "读取授权链接权限和已保存渠道", []map[string]any{pathStringParam("token", "授权链接令牌。")}, nil,
+					defaulted(map[string]any{"200": jsonResponse("渠道、有效期、allow_multi_channel 和 completed_channels；不返回凭据或 unionid。", freeFormObjectSchema("链接元数据。"))})),
+			},
+			"/account-link/{token}/finish": map[string]any{
+				"post": openAPIOperation([]string{"account-links"}, "结束多渠道授权并关闭链接", []map[string]any{pathStringParam("token", "授权链接令牌。")}, nil,
+					defaulted(map[string]any{"200": jsonResponse("至少已保存一个渠道后可以结束；已保存账号保持生效。", freeFormObjectSchema("completed=true。"))})),
+			},
 			"/accounts": map[string]any{
 				"get": openAPIOperation(
 					[]string{"accounts"},
 					"获取账号列表",
-					nil,
+					[]map[string]any{queryStringParam("include_members", "默认 false，每组返回可调用的主账号 ID，status 汇总组内最佳状态。true 返回全部渠道及各自真实状态，仅供管理；子 ID 不可直接调用协议。", false)},
 					nil,
 					defaulted(map[string]any{
-						"200": jsonResponse("已保存的账号列表。", arraySchema(refSchema("AccountPublic"))),
+						"200": jsonResponse("可见账号列表；按已保存状态选择组内可用授权，全部失效时仍保留一条状态记录。返回真实账号 ID，fleet_primary_id 指向原主账号；读取不发起上游刷新或取码。", arraySchema(refSchema("AccountPublic"))),
 					}),
 				),
 				"delete": openAPIOperation(
@@ -129,6 +218,17 @@ func newOpenAPISpec() map[string]any {
 					nil,
 					defaulted(map[string]any{
 						"200": jsonResponse("删除结果。", refSchema("DeleteAccountResponse")),
+					}),
+				),
+			},
+			"/accounts/repair": map[string]any{
+				"post": openAPIOperation(
+					[]string{"accounts"},
+					"预览或清理未完成扫码残留",
+					nil,
+					jsonOptionalRequestBody(freeFormObjectSchema("confirm=true 执行清理；省略或 false 仅预览。")),
+					defaulted(map[string]any{
+						"200": jsonResponse("账号整理结果。", freeFormObjectSchema("清理结果。")),
 					}),
 				),
 			},
@@ -320,7 +420,7 @@ func newOpenAPISpec() map[string]any {
 			"/wx/oauth": map[string]any{
 				"post": openAPIOperation(
 					[]string{"oauth"},
-					"生成微信公众号网页授权链接",
+					"获取公众号网页授权 code：默认通过账号会话自动完成网页授权并返回真实 code（等价 /wx/h5code，H5 脚本免手工授权）；带 return_url_only=true 时退回旧行为，只生成授权链接",
 					nil,
 					jsonRequestBody(objectSchema([]string{"ref", "appid", "redirect_uri"}, map[string]any{
 						"ref":             map[string]any{"type": "string"},
@@ -331,7 +431,7 @@ func newOpenAPISpec() map[string]any {
 						"component_appid": map[string]any{"type": "string"},
 					})),
 					defaulted(map[string]any{
-						"200": jsonResponse("生成授权链接；用户授权后 code 会回传到 redirect_uri。", freeFormObjectSchema("公众号网页授权结果")),
+						"200": jsonResponse("默认返回自动换取的网页授权 code（mode=authorization_code）；return_url_only=true 时生成授权链接、code 为 null，用户在微信内授权后 code 和 state 回传到 redirect_uri。", freeFormObjectSchema("公众号网页授权结果")),
 					}),
 				),
 			},
@@ -342,16 +442,17 @@ func newOpenAPISpec() map[string]any {
 				"post": openAPIOperation([]string{"wx"}, "获取 YYB 账号用户信息", nil, jsonRequestBody(refSchema("AccountRefRequest")),
 					defaulted(map[string]any{"200": jsonResponse("用户信息。", freeFormObjectSchema("用户信息结果"))})),
 			},
-			"/wx/encryptkey":     wxAliasOperation("加密能力兼容转发（需要真实 payload）", "OperateWXDataRequest", "WxappResponse"),
-			"/wx/getphonenumber": wxAliasOperation("获取手机号（兼容入口）", "WxappRequest", "WxappResponse"),
-			"/wx/cloud":          wxAliasOperation("云函数/通用 operateWxData 兼容入口", "OperateWXDataRequest", "WxappResponse"),
+			"/wx/encryptkey":       wxAliasOperation("加密能力兼容转发（需要真实 payload）", "OperateWXDataRequest", "WxappResponse"),
+			"/wx/getlatestuserkey": wxAliasOperation("webapi_getuserencryptkey 加密密钥转发（需要真实 payload）", "OperateWXDataRequest", "WxappResponse"),
+			"/wx/getphonenumber":   wxAliasOperation("手机号能力（按账号渠道构造，需真实授权）", "WxappRequest", "WxappResponse"),
+			"/wx/cloud":            wxAliasOperation("云函数/通用 operateWxData 兼容入口", "OperateWXDataRequest", "WxappResponse"),
 			"/wx/qrcodeauth": map[string]any{
 				"post": openAPIOperation([]string{"qr"}, "创建二维码授权会话", nil, jsonOptionalRequestBody(refSchema("ProxySpec")),
 					defaulted(map[string]any{"200": jsonResponse("二维码授权会话。", refSchema("QRCreateResponse"))})),
 			},
 			"/wx/mpgeta8key": wxAliasOperation("文章会话兼容入口", "OperateWXDataRequest", "WxappResponse"),
-			"/wx/appmsgext":  wxAliasOperation("文章扩展数据兼容入口", "OperateWXDataRequest", "WxappResponse"),
-			"/wx/appmsglike": wxAliasOperation("文章点赞兼容入口", "OperateWXDataRequest", "WxappResponse"),
+			"/wx/appmsgext":  wxAliasOperation("文章扩展数据兼容转发（未验证）", "OperateWXDataRequest", "WxappResponse"),
+			"/wx/appmsglike": wxAliasOperation("文章点赞兼容转发（未验证）", "OperateWXDataRequest", "WxappResponse"),
 			"/wxapp/getCode": map[string]any{
 				"post": openAPIOperation(
 					[]string{"wxapp"},
@@ -363,6 +464,34 @@ func newOpenAPISpec() map[string]any {
 					}),
 				),
 			},
+			"/wx/h5code": map[string]any{
+				"post": openAPIOperation(
+					[]string{"wxapp"},
+					"获取公众号网页授权 code（H5 OAuth 自动确认）",
+					nil,
+					jsonRequestBody(map[string]any{
+						"type":     "object",
+						"required": []string{"ref", "app_id"},
+						"properties": map[string]any{
+							"ref":    map[string]any{"type": "string", "description": "账号引用：数字 ID 或 @OpenID"},
+							"app_id": map[string]any{"type": "string", "description": "公众号 AppID"},
+							"payload": map[string]any{
+								"type":     "object",
+								"required": []string{"redirect_uri"},
+								"properties": map[string]any{
+									"redirect_uri": map[string]any{"type": "string", "description": "授权后微信回跳的业务地址，code 附加在它的 query 上"},
+									"scope":        map[string]any{"type": "string", "enum": []string{"snsapi_base", "snsapi_userinfo"}, "description": "默认 snsapi_base"},
+									"state":        map[string]any{"type": "string", "description": "可选；缺省自动生成并在响应中返回"},
+								},
+							},
+						},
+					}),
+					defaulted(map[string]any{
+						"200": jsonResponse("网页授权 code（回调地址与 state 严格校验后返回 result.code）。", refSchema("WxappResponse")),
+					}),
+				),
+			},
+			"/wxapp/getH5Code": wxAliasOperation("获取公众号网页授权 code（H5 OAuth 自动确认；/wx/h5code 兼容入口）", "WxappRequest", "WxappResponse"),
 			"/wx/qrcodeauth/{session_id}/image": map[string]any{
 				"get": openAPIOperation([]string{"qr"}, "获取兼容二维码图片", []map[string]any{pathStringParam("session_id", "二维码会话 ID。")}, nil,
 					defaulted(map[string]any{"200": imageResponse("二维码图片。")})),
@@ -399,6 +528,13 @@ func newOpenAPISpec() map[string]any {
 			},
 		},
 		"components": map[string]any{
+			"securitySchemes": map[string]any{
+				"ProtocolBearer": map[string]any{
+					"type":        "http",
+					"scheme":      "bearer",
+					"description": "填写 YYB_PROTOCOL_TOKEN 的值，不含 Bearer 前缀。未配置时留空。只用于 /wx/* 与 /wxapp/*，不会代替网页登录。",
+				},
+			},
 			"schemas": map[string]any{
 				"APIResponse": objectSchema([]string{"code", "msg", "data"}, map[string]any{
 					"code": map[string]any{"type": "integer", "example": 0, "description": "业务状态码，0 表示成功，非 0 表示业务错误。"},
@@ -408,12 +544,13 @@ func newOpenAPISpec() map[string]any {
 				"APIErrorResponse": objectSchema([]string{"code", "msg", "data"}, map[string]any{
 					"code": map[string]any{"type": "integer", "example": 400, "description": "非 0 业务错误码。"},
 					"msg":  map[string]any{"type": "string", "example": "ref is required"},
-					"data": nullableObjectSchema("错误响应当前固定返回 null。"),
+					"data": nullableObjectSchema("通常为 null；账号恢复失败的 409 包含 rescan_required 与 upstream_errors（阶段和数字错误码，不含凭据）。已失效记录再次调用时 upstream_errors 为空，不重放上游请求或推断历史原因。"),
 				}),
 				"HealthResponse": objectSchema([]string{"ok"}, map[string]any{
 					"ok": map[string]any{"type": "boolean"},
 				}),
 				"QRCreateResponse": objectSchema([]string{"session_id", "status", "image_url"}, map[string]any{
+					"product":      map[string]any{"type": "string", "enum": []string{"appstore", "pcmgr", "gameassist"}},
 					"session_id":   map[string]any{"type": "string"},
 					"status":       map[string]any{"type": "string", "example": "pending"},
 					"image_url":    map[string]any{"type": "string", "example": "/qr/{session_id}/image"},
@@ -440,6 +577,7 @@ func newOpenAPISpec() map[string]any {
 					"redirect_url": map[string]any{"type": "string", "format": "uri"},
 				}),
 				"AccountPublic": objectSchema([]string{"id", "openid", "created_at", "updated_at"}, map[string]any{
+					"scan_product":              map[string]any{"type": "string", "enum": []string{"appstore", "pcmgr", "gameassist"}, "description": "账号原扫码渠道。"},
 					"id":                        int64Schema(),
 					"openid":                    map[string]any{"type": "string"},
 					"uin":                       nullableInt64Schema(),
@@ -447,9 +585,9 @@ func newOpenAPISpec() map[string]any {
 					"nickname":                  nullableStringSchema("账号昵称。"),
 					"remark":                    nullableStringSchema("用户设置的账号备注。"),
 					"avatar":                    nullableStringSchema("本地头像路径或远程头像 URL。"),
-					"status":                    nullableStringSchema("账号状态。"),
+					"status":                    nullableStringSchema("alive / unknown / expired；session_only 表示授权拒绝、仅允许已有缓存会话，需重新扫码。"),
 					"refresh_token_observed_at": nullableInt64Schema(),
-					"rescan_recommended":        map[string]any{"type": "boolean", "description": "当前 refresh token 已连续使用约 25 天，建议重新扫码。"},
+					"rescan_recommended":        map[string]any{"type": "boolean", "description": "授权被拒绝或 refresh token 已连续使用约 25 天，建议重新扫码。"},
 					"last_checked_at":           nullableInt64Schema(),
 					"created_at":                int64Schema(),
 					"updated_at":                int64Schema(),
@@ -462,6 +600,12 @@ func newOpenAPISpec() map[string]any {
 					"status":          map[string]any{"type": "string", "example": "alive"},
 					"rescan_required": map[string]any{"type": "boolean", "description": "仅在服务端明确判定登录凭证失效时为 true。"},
 					"refresh_error":   nullableStringSchema("本次刷新失败原因；临时网络错误不代表账号失效。"),
+					"upstream_errors": arraySchema(refSchema("UpstreamDiagnostic")),
+				}),
+				"UpstreamDiagnostic": objectSchema([]string{"stage", "upstream_code"}, map[string]any{
+					"stage":         map[string]any{"type": "string", "enum": []string{"shortlink_application", "shortlink_transport", "manual_auth", "native_autoauth_transport", "native_autoauth_application", "native_autoauth_business", "jslogin_business", "jslogin_result", "h5_oauth_business", "login_buffer", "refresh_token", "check_login"}},
+					"upstream_code": map[string]any{"type": "integer", "description": "已解析的业务拒绝码。"},
+					"wechat_code":   map[string]any{"type": "integer", "description": "业务消息中明确提供的已知微信拒绝码；不能从请求标识或网络错误猜测。"},
 				}),
 				"DeleteAccountResponse": objectSchema([]string{"deleted", "openid", "qinglong_cleanup", "env_entries_removed", "tasks_deleted"}, map[string]any{
 					"deleted":             int64Schema(),
@@ -478,7 +622,8 @@ func newOpenAPISpec() map[string]any {
 					"remark": map[string]any{"type": "string", "maxLength": 80},
 				}),
 				"ProxySpec": objectSchema(nil, map[string]any{
-					"product":               map[string]any{"type": "string", "enum": []string{"appstore"}, "default": "appstore", "description": "登录产品。电脑管家等产品在凭据兑换链路验证前不会创建会话。"},
+					"protocol_proxy_mode":   map[string]any{"type": "string", "enum": []string{"account", "direct"}, "description": "新账号小程序调用出口，默认跟随账号连接模式；已有账号重扫保留原设置。"},
+					"product":               map[string]any{"type": "string", "enum": []string{"appstore", "pcmgr", "gameassist"}, "description": "扫码渠道；省略时使用个人或系统默认。"},
 					"mode":                  map[string]any{"type": "string", "enum": []string{"direct", "static", "api"}, "default": "direct"},
 					"proxy_type":            map[string]any{"type": "string", "enum": []string{"http", "socks5"}, "default": "http", "description": "http 使用 HTTP CONNECT。"},
 					"static_proxy":          map[string]any{"type": "string", "example": "user:pass@127.0.0.1:8080"},
@@ -490,6 +635,7 @@ func newOpenAPISpec() map[string]any {
 					"refresh_ahead_minutes": map[string]any{"type": "integer", "minimum": 5, "maximum": 90, "default": 5},
 				}),
 				"AccountProxyRequest": objectSchema([]string{"ref", "mode"}, map[string]any{
+					"protocol_proxy_mode":   map[string]any{"type": "string", "enum": []string{"account", "direct"}, "description": "小程序调用出口；省略或 null 保留原值，新账号默认 account。扫码与凭据刷新仍遵循账号代理。"},
 					"ref":                   map[string]any{"type": "string", "description": "账号 ID、UIN 或 openid。"},
 					"mode":                  map[string]any{"type": "string", "enum": []string{"direct", "static", "api"}},
 					"proxy_type":            map[string]any{"type": "string", "enum": []string{"http", "socks5"}},
@@ -514,6 +660,7 @@ func newOpenAPISpec() map[string]any {
 					"refresh_ahead_minutes": map[string]any{"type": "integer", "minimum": 5, "maximum": 90, "default": 5},
 				}),
 				"AccountProxySetting": objectSchema([]string{"account_id", "mode", "proxy_type", "configured", "updated_at"}, map[string]any{
+					"protocol_proxy_mode":   map[string]any{"type": "string", "enum": []string{"account", "direct"}, "description": "小程序调用跟随账号连接模式或直接连接微信。"},
 					"account_id":            int64Schema(),
 					"mode":                  map[string]any{"type": "string", "enum": []string{"direct", "static", "api"}},
 					"proxy_type":            map[string]any{"type": "string", "enum": []string{"http", "socks5"}},
@@ -530,7 +677,7 @@ func newOpenAPISpec() map[string]any {
 				}),
 				"ProxyProviderProfileRequest": objectSchema([]string{"name", "provider"}, map[string]any{
 					"name":               map[string]any{"type": "string", "maxLength": 50, "example": "巨量代理 1"},
-					"provider":           map[string]any{"type": "string", "enum": []string{"ipzan", "juliang"}, "default": "ipzan"},
+					"provider":           map[string]any{"type": "string", "enum": []string{"ipzan", "juliang", "static"}, "default": "ipzan"},
 					"proxy_type":         map[string]any{"type": "string", "enum": []string{"http", "socks5"}, "default": "http"},
 					"authorization_mode": map[string]any{"type": "string", "enum": []string{"auth", "whitelist"}, "default": "auth", "description": "auth 使用提取结果中的临时账号密码；whitelist 依赖服务器出口 IP 白名单。"},
 					"api_url":            map[string]any{"type": "string", "format": "uri", "description": "品赞配置填写包含 no 和 secret 的 core-extract HTTPS 链接。"},
@@ -540,7 +687,7 @@ func newOpenAPISpec() map[string]any {
 				"ProxyProviderProfile": objectSchema([]string{"id", "name", "provider", "proxy_type", "api_url"}, map[string]any{
 					"id":         int64Schema(),
 					"name":       map[string]any{"type": "string"},
-					"provider":   map[string]any{"type": "string", "enum": []string{"ipzan", "juliang"}},
+					"provider":   map[string]any{"type": "string", "enum": []string{"ipzan", "juliang", "static"}},
 					"proxy_type": map[string]any{"type": "string", "enum": []string{"http", "socks5"}},
 					"api_url":    map[string]any{"type": "string", "format": "uri"},
 					"created_at": int64Schema(),
@@ -698,6 +845,19 @@ func newOpenAPISpec() map[string]any {
 			},
 		},
 	}
+	// Scope Swagger's Authorization header to the same protocol endpoints as
+	// the router gate, without leaking it to management or public operations.
+	for path, item := range spec["paths"].(map[string]any) {
+		if !strings.HasPrefix(path, "/wx/") && !strings.HasPrefix(path, "/wxapp/") {
+			continue
+		}
+		for _, value := range item.(map[string]any) {
+			operation := value.(map[string]any)
+			operation["security"] = []map[string][]string{{"ProtocolBearer": {}}}
+			operation["responses"].(map[string]any)["401"] = jsonErrorResponse("协议令牌缺失或错误。")
+		}
+	}
+	return spec
 }
 
 func openAPIOperation(tags []string, summary string, parameters []map[string]any, requestBody map[string]any, responses map[string]any) map[string]any {
@@ -748,6 +908,17 @@ func imageResponse(description string) map[string]any {
 		"content": map[string]any{
 			"image/jpeg": map[string]any{
 				"schema": map[string]any{"type": "string", "format": "binary"},
+			},
+		},
+	}
+}
+
+func htmlResponse(description string) map[string]any {
+	return map[string]any{
+		"description": description,
+		"content": map[string]any{
+			"text/html": map[string]any{
+				"schema": map[string]any{"type": "string"},
 			},
 		},
 	}

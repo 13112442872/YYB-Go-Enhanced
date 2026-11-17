@@ -4,7 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>工作台 - YYB Go</title>
-  <link rel="stylesheet" href="/static/css/platform.css?v=20260824-push1">
+  <link rel="stylesheet" href="/static/css/platform.css?v=20261109-ui">
+  <link rel="stylesheet" href="/static/css/skin-clean.css?v=20261103-skin">
+  <script>try{if(localStorage.getItem("yyb-skin")==="clean")document.documentElement.dataset.skin="clean"}catch(e){}</script>
   <style>
     :root {
       color-scheme: light;
@@ -14,7 +16,7 @@
       --surface-strong: oklch(0.948 0.009 250);
       --ink: oklch(0.19 0.025 252);
       --muted: oklch(0.43 0.025 252);
-      --faint: oklch(0.58 0.018 252);
+      --faint: oklch(0.46 0.018 252);
       --line: oklch(0.885 0.012 250);
       --primary: oklch(0.54 0.205 3);
       --primary-hover: oklch(0.48 0.195 3);
@@ -232,26 +234,17 @@
 
     .summary {
       min-width: 0;
-      background: var(--bg);
-      border: 1px solid var(--line);
-      border-radius: var(--radius);
-      padding: 18px;
+      padding: 0;
       display: grid;
-      gap: 12px;
+      gap: 8px;
     }
 
     .summary h2 {
       margin: 0;
-      font-size: 20px;
+      font-size: 24px;
       font-weight: 760;
       letter-spacing: 0;
       text-wrap: balance;
-    }
-
-    .summary-copy {
-      margin: 0;
-      max-width: 72ch;
-      color: var(--muted);
     }
 
     .stat-row {
@@ -264,11 +257,8 @@
       min-height: 32px;
       display: inline-flex;
       align-items: center;
-      gap: 8px;
-      padding: 6px 10px;
-      border-radius: 999px;
-      background: var(--surface);
-      border: 1px solid var(--line);
+      gap: 6px;
+      padding: 2px 12px 2px 0;
       color: var(--muted);
     }
 
@@ -278,31 +268,19 @@
     }
 
     .quick-actions {
-      min-width: 260px;
-      background: var(--ink);
-      color: var(--bg);
-      border-radius: var(--radius);
-      padding: 16px;
-      display: grid;
-      align-content: space-between;
-      gap: 14px;
+      align-self: start;
+      color: var(--muted);
     }
-
-    .quick-actions p {
-      margin: 0;
-      color: oklch(0.86 0.012 250);
-      font-size: 13px;
-    }
-
-    .quick-actions .btn {
-      background: oklch(0.25 0.028 252);
-      color: var(--bg);
-      border-color: oklch(0.34 0.028 252);
-    }
-
-    .quick-actions .btn:hover {
-      background: oklch(0.31 0.032 252);
-    }
+    .quick-actions summary, .account-maintenance summary { cursor:pointer; padding:9px 0; font-size:13px; }
+    .quick-actions .inline-actions, .account-maintenance .inline-actions { margin-top:8px; }
+    .account-filters { display:flex; flex-wrap:wrap; align-items:start; gap:10px; padding:12px 16px; border-bottom:1px solid var(--line); }
+    .account-search { flex:1 1 240px; }
+    .account-maintenance .inline-actions { flex-direction:column; }
+    .account-filters .input { min-height:40px; }
+    .account-maintenance summary { padding:0; line-height:40px; }
+    #accountWorkspace, #callWorkspace { scroll-margin-top:80px; }
+    .mobile-account-actions { display:none; }
+    .sr-only { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
 
     .account-band,
     .panel {
@@ -346,46 +324,161 @@
     .account-strip {
       padding: 12px;
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
-      gap: 10px;
-      max-height: 326px;
-      overflow-y: auto;
+      grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+      gap: 12px;
       align-content: start;
-      scrollbar-width: thin;
+      align-items: stretch;
       min-height: 112px;
     }
 
     .account-card {
+      position: relative;
+      isolation: isolate;
+      overflow: hidden;
       width: 100%;
       min-width: 0;
-      min-height: 88px;
-      padding: 10px;
+      padding: 12px;
       border: 1px solid var(--line);
-      border-radius: var(--radius);
+      border-radius: 10px;
       background: var(--surface);
       color: var(--ink);
       text-align: left;
       display: grid;
-      grid-template-columns: 36px minmax(0, 1fr);
-      gap: 9px;
+      grid-template-columns: 32px minmax(0, 1fr);
+      /* identity / lifecycle (takes the slack) / actions, so actions line up across a row */
+      grid-template-rows: auto minmax(0, 1fr) auto;
+      gap: 10px;
       align-items: start;
-      transition: background 160ms ease, border-color 160ms ease;
+      transition: background 180ms cubic-bezier(0.25, 1, 0.5, 1), border-color 180ms cubic-bezier(0.25, 1, 0.5, 1), box-shadow 180ms cubic-bezier(0.25, 1, 0.5, 1);
+    }
+
+    .account-card.alive {
+      border-color: var(--line);
+      background: var(--bg);
+    }
+
+    .account-card.alive .account-status {
+      color: oklch(0.43 0.12 145);
+      font-weight: 680;
+    }
+
+    .account-card.warning {
+      background: oklch(0.99 0.008 82);
+    }
+
+    .account-card.warning .account-status {
+      color: oklch(0.47 0.11 72);
+      font-weight: 680;
+    }
+
+    .account-card.expired {
+      background: var(--bg-soft);
+    }
+
+    .account-card.expired .avatar,
+    .account-card.expired .account-main {
+      opacity: 1;
+      filter: grayscale(0.88) saturate(0.35);
+      transition: opacity 420ms cubic-bezier(0.25, 1, 0.5, 1), filter 420ms cubic-bezier(0.25, 1, 0.5, 1);
+    }
+
+    .account-card.expired .account-status {
+      color: oklch(0.42 0.12 24);
+      font-weight: 760;
+    }
+
+    .account-card.expired::after {
+      content: attr(data-state-label);
+      position: absolute;
+      right: 16px;
+      top: 100px;
+      z-index: 2;
+      padding: 4px 10px 3px;
+      border: 3px double oklch(0.49 0.19 24 / 0.72);
+      border-radius: 4px;
+      color: oklch(0.45 0.2 24 / 0.76);
+      background: oklch(0.97 0.02 24 / 0.48);
+      box-shadow: 0 0 0 1px oklch(0.99 0 0 / 0.5), 0 2px 8px oklch(0.35 0.12 24 / 0.12);
+      font-size: 13px;
+      font-weight: 900;
+      letter-spacing: 0.16em;
+      line-height: 1.1;
+      text-indent: 0.16em;
+      transform: rotate(-13deg);
+      pointer-events: none;
+    }
+
+    .account-card.expired.expired-alert {
+      animation: expired-neon-alert 2.35s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    .account-card.expired.expired-alert::after {
+      animation: expired-stamp-in 720ms cubic-bezier(0.16, 1, 0.3, 1) 260ms both;
+    }
+
+    .account-card.expired.expired-alert .avatar,
+    .account-card.expired.expired-alert .account-main {
+      animation: expired-content-dim 2.35s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    @keyframes expired-neon-alert {
+      0%, 22% {
+        border-color: oklch(0.61 0.24 24);
+        background: oklch(0.965 0.04 24);
+        box-shadow: 0 0 0 2px oklch(0.68 0.25 24 / 0.34), 0 0 22px oklch(0.61 0.25 24 / 0.56), inset 0 0 18px oklch(0.65 0.19 24 / 0.12);
+      }
+      38% {
+        border-color: oklch(0.78 0.08 24);
+        box-shadow: 0 0 0 1px oklch(0.68 0.21 24 / 0.18), 0 0 7px oklch(0.61 0.25 24 / 0.2);
+      }
+      52% {
+        border-color: oklch(0.62 0.21 24);
+        background: oklch(0.965 0.026 24);
+        box-shadow: 0 0 0 2px oklch(0.68 0.22 24 / 0.24), 0 0 15px oklch(0.61 0.23 24 / 0.34);
+      }
+      100% {
+        border-color: oklch(0.78 0.025 20);
+        background: oklch(0.94 0.008 20);
+        box-shadow: inset 0 0 0 1px oklch(0.74 0.03 20 / 0.22);
+      }
+    }
+
+    @keyframes expired-stamp-in {
+      0% { opacity: 0; transform: rotate(-13deg) scale(1.42); filter: blur(2px); }
+      54% { opacity: 0.96; transform: rotate(-13deg) scale(0.96); filter: blur(0); }
+      100% { opacity: 1; transform: rotate(-13deg) scale(1); filter: blur(0); }
+    }
+
+    @keyframes expired-content-dim {
+      0%, 32% { opacity: 0.92; filter: grayscale(0.15) saturate(0.9); }
+      100% { opacity: 1; filter: grayscale(0.88) saturate(0.35); }
     }
 
     .account-card:hover {
-      background: var(--bg);
-      border-color: oklch(0.78 0.035 190);
+      border-color: oklch(0.79 0.025 250);
+      box-shadow: 0 3px 10px oklch(0.2 0.025 252 / .06);
+    }
+
+    .account-card.expired:hover {
+      background: oklch(0.955 0.01 20);
+      border-color: oklch(0.69 0.08 24);
     }
 
     .account-card.selected {
-      background: var(--accent-soft);
-      border-color: var(--accent);
+      background: oklch(0.978 0.01 3);
+      border-color: oklch(0.7 0.13 3);
+      box-shadow: 0 0 0 1px oklch(0.7 0.13 3 / .15);
+    }
+
+    .account-card.expired.selected {
+      background: oklch(0.962 0.008 20);
+      box-shadow: inset 0 0 0 1px oklch(0.72 0.07 24);
     }
 
     .avatar {
-      width: 36px;
-      height: 36px;
-      border-radius: 50%;
+      width: 32px;
+      height: 32px;
+      border-radius: 10px;
       overflow: hidden;
       background: var(--surface-strong);
       border: 1px solid var(--line);
@@ -405,16 +498,21 @@
     .account-main {
       min-width: 0;
       display: grid;
-      gap: 4px;
+      gap: 3px;
     }
 
     .account-header {
       min-width: 0;
+      min-height: 24px;
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 8px;
     }
+
+    .account-header-tools { display:flex;align-items:center;gap:7px;flex-shrink:0; }
+    .scan-channel-badge { display:inline-flex;align-items:center;justify-content:center;width:23px;height:23px;border:1px solid var(--border,#d9e3e5);border-radius:7px;background:#fff; }
+    .scan-channel-badge img { width:17px;height:17px;object-fit:contain; }
 
     .account-name {
       min-width: 0;
@@ -423,6 +521,9 @@
       white-space: nowrap;
       font-weight: 760;
     }
+    .account-select { border:0; padding:0; background:transparent; color:inherit; font:inherit; font-size:14px; font-weight:650; text-align:left; cursor:pointer; }
+    .account-select::after { content:""; position:absolute; inset:0; z-index:1; }
+    .account-card:focus-within { outline:2px solid var(--platform-accent); outline-offset:3px; }
 
     .account-status {
       display: inline-flex;
@@ -432,6 +533,31 @@
       font-size: 12px;
       white-space: nowrap;
       flex: 0 0 auto;
+    }
+    .account-status-toggle { position:relative; z-index:3; border:0; border-radius:4px; padding:3px 5px; background:transparent; cursor:pointer; font:inherit; font-size:12px; }
+    .account-status-toggle:hover, .account-status-toggle[aria-expanded="true"] { background:var(--warning-soft); }
+    .account-status-toggle svg { width:12px; height:12px; fill:none; stroke:currentColor; stroke-width:1.7; }
+    .account-row-actions { grid-column:1 / -1; display:flex; justify-content:flex-end; align-items:center; gap:6px; }
+    .account-row-actions .btn { position:relative; z-index:3; min-height:32px; padding:6px 10px; }
+
+    .account-confirm-actions {
+      grid-column:1 / -1;
+      display: flex;
+      align-items:center;
+      gap: 8px;
+      border-top:1px solid var(--line);
+      padding-top:8px;
+      font-size:12px;
+      color:var(--muted);
+    }
+    .account-confirm-actions > span { margin-right:auto; }
+
+    .account-confirm-actions .btn {
+      position:relative;
+      z-index:3;
+      min-height: 34px;
+      padding: 5px 9px;
+      font-size: 12px;
     }
 
     .account-meta {
@@ -469,7 +595,7 @@
       display: grid;
       grid-template-columns: minmax(360px, 0.95fr) minmax(420px, 1.15fr) minmax(260px, 0.65fr);
       gap: 18px;
-      align-items: start;
+      align-items: stretch;
     }
 
     .panel-body {
@@ -493,6 +619,11 @@
       font-size: 12px;
       font-weight: 680;
     }
+
+    .protocol-token-control { display: flex; gap: 8px; }
+    .protocol-token-control .input { min-width: 0; }
+    .protocol-token-control .btn { flex-shrink: 0; }
+    #protocolTokenInput[aria-invalid="true"] { border-color: var(--danger); }
 
     .input,
     .select,
@@ -536,36 +667,52 @@
     }
 
     .selected-account strong {
+      flex: 1;
+      min-width: 0;
       color: var(--ink);
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
 
+    .test-provider { flex-shrink: 0; font-size: 12px; font-weight: 700; color: var(--ink); }
+    .test-command { min-width: 0; border-top: 1px solid var(--line); padding-top: 12px; }
+    .test-command summary { cursor: pointer; font-size: 13px; font-weight: 650; }
+    .command-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0 8px; }
+    .command-toolbar label { font-size: 12px; color: var(--muted); }
+    .command-toolbar .select { width: auto; flex: 1; min-width: 100px; }
+    .command-preview { max-height: 260px; overflow: auto; margin: 0; padding: 12px; border-radius: var(--radius); background: var(--code-bg); color: var(--code-ink); font: 12px/1.6 ui-monospace, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .test-command .field-note { display: block; margin-top: 8px; line-height: 1.6; }
+
     .account-tools {
-      display: flex;
-      flex-wrap: wrap;
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
       gap: 8px;
-      margin: 10px 0 14px;
     }
 
-    .account-tools .input { min-width: 180px; flex: 1 1 220px; }
-    .account-tools .btn { flex: 0 0 auto; }
+    .account-tools .input { grid-column: span 4; min-width: 0; }
+    .account-tools .btn { grid-column: span 3; }
+    .account-tools #saveRemarkBtn { grid-column: span 2; }
 
     .proxy-summary {
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 12px;
-      margin: 0 0 14px;
-      padding: 12px 0;
+      padding-top: 14px;
       border-top: 1px solid var(--line);
-      border-bottom: 1px solid var(--line);
     }
+
+    .proxy-summary + .form-grid { padding-top: 14px; border-top: 1px solid var(--line); }
 
     .proxy-summary-copy { min-width: 0; }
     .proxy-summary-copy span { display: block; margin-bottom: 3px; color: var(--muted); font-size: 12px; }
     .proxy-summary-copy strong { display: block; overflow-wrap: anywhere; font-size: 13px; }
+    .proxy-summary-copy label { display: flex; align-items: center; gap: 7px; color: var(--ink); font-size: 13px; font-weight: 650; }
+    .proxy-summary-copy label input { margin: 0; accent-color: var(--platform-accent); }
+    .proxy-summary-copy .field-note { display: block; margin: 4px 0 0; line-height: 1.55; }
+    .proxy-summary-copy a { display: inline-block; margin-top: 4px; color: var(--platform-accent); font-size: 12px; font-weight: 600; text-decoration: none; }
+    .proxy-summary-copy a:hover { text-decoration: underline; }
     .proxy-summary .btn { flex: 0 0 auto; }
 
     .integration {
@@ -586,13 +733,28 @@
       font-size: 11px;
     }
 
+    .account-lifecycle { grid-column:1 / -1; min-width:0; display:grid; gap:8px; padding-top:8px; border-top:1px solid var(--line); }
+    .lifecycle-row { display:grid; grid-template-columns:60px minmax(36px,1fr) 100px; align-items:center; gap:8px; color:var(--muted); font-size:12px; line-height:1.3; }
+    .lifecycle-label { white-space:nowrap; }
+    .lifecycle-track { height:4px; overflow:hidden; border-radius:999px; background:var(--surface-strong); }
+    .lifecycle-track span { display:block; height:100%; border-radius:inherit; background:var(--lifecycle-color,#29934a); transition:width 180ms ease,background-color 180ms ease; }
+    .lifecycle-value { min-width:72px; text-align:right; color:var(--faint); white-space:nowrap; font-variant-numeric:tabular-nums; }
+    .lifecycle-note { color:var(--muted); font-size:11px; }
+    .lifecycle-inactive { color:var(--muted); font-size:12px; min-height:72px; padding-right:88px; align-content:center; }
+
+    .result-panel { display: flex; flex-direction: column; }
+
     .result-panel .panel-body {
+      flex: 1 1 auto;
+      display: flex;
+      flex-direction: column;
       gap: 10px;
+      min-height: 0;
     }
 
     .result-box {
+      flex: 1 1 0;
       min-height: 360px;
-      max-height: 560px;
       margin: 0;
       overflow: auto;
       border-radius: var(--radius);
@@ -608,6 +770,17 @@
 
     .result-box.error {
       color: oklch(0.86 0.075 25);
+    }
+
+    .result-box.is-empty {
+      display: grid;
+      place-items: center;
+      min-height: 120px;
+      border: 1px solid var(--line);
+      background: var(--platform-bg);
+      color: var(--muted);
+      font-family: inherit;
+      text-align: center;
     }
 
     .quick-list {
@@ -650,18 +823,72 @@
       display: none !important;
     }
 
+    dialog.link-dialog {
+      width: min(560px, calc(100vw - 32px));
+      max-width: 560px;
+      padding: 0;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--bg);
+      color: var(--ink);
+      box-shadow: 0 24px 70px oklch(0.18 0.04 210 / 0.24);
+    }
+
+    dialog.link-dialog::backdrop {
+      background: oklch(0.18 0.04 210 / 0.48);
+      backdrop-filter: blur(2px);
+    }
+
+    .link-dialog-body { padding: 22px; }
+    .link-dialog-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:16px; }
+    .link-dialog-head h2 { margin:0; font-size:18px; line-height:1.25; }
+    .link-dialog-head p { margin:5px 0 0; color:var(--muted); font-size:12px; line-height:1.5; }
+    .link-dialog-close { min-width:34px; min-height:34px; padding:4px; border:1px solid var(--line); border-radius:var(--radius); background:transparent; color:var(--muted); font-size:20px; line-height:1; cursor:pointer; }
+    .link-dialog-close:hover { background:var(--surface-strong); color:var(--ink); }
+    .link-dialog-close:focus-visible { outline:3px solid oklch(0.82 0.08 190); outline-offset:2px; }
+    .link-dialog-url { display:flex; gap:8px; align-items:stretch; }
+    .link-dialog-url .input { min-width:0; flex:1; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:12px; }
+    .link-dialog-meta { margin-top:10px; color:var(--muted); font-size:12px; line-height:1.5; overflow-wrap:anywhere; }
+    .link-dialog-footnote { margin:14px 0 0; color:var(--muted); font-size:12px; line-height:1.55; }
+    .link-dialog-existing { margin:0 0 14px; padding:10px 12px; border:1px solid oklch(0.86 0.07 75); border-radius:var(--radius); background:oklch(0.98 0.02 90); }
+    .link-dialog-existing-row { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:8px 0; border-top:1px solid oklch(0.91 0.04 85); font-size:12px; }
+    .link-dialog-existing-row:first-child { border-top:0; }
+    .link-dialog-existing-row .inline-actions { margin:0; }
+    .link-dialog-existing-row .btn { padding:6px 8px; font-size:12px; }
+    @media (max-width:520px) { .link-dialog-body { padding:18px; } .link-dialog-url { flex-direction:column; } .link-dialog-url .btn { width:100%; } .link-dialog-existing-row { align-items:flex-start; flex-direction:column; } }
+
     @media (max-width: 1360px) {
-      .overview,
       .work-grid {
         grid-template-columns: minmax(0, 1fr);
       }
+
+      .result-box { flex: 0 0 auto; max-height: 560px; }
 
       .quick-actions {
         min-width: 0;
       }
     }
 
+    /* Laptop widths: configuration beside its output, entries as one row underneath. */
+    @media (min-width: 1080px) and (max-width: 1360px) {
+      .work-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .work-grid > aside { grid-column: 1 / -1; }
+      .work-grid > aside .quick-list { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+      .result-box { flex: 1 1 0; max-height: none; }
+    }
+
     @media (max-width: 760px) {
+      .overview { grid-template-columns:minmax(0,1fr) auto; gap:8px; }
+      .overview .quick-actions { align-self:end; }
+      .stat-row { gap:6px; font-size:12px; }
+      .stat-chip { padding-right:2px; gap:4px; }
+      #accountWorkspace > .section-head { flex-direction:column; align-items:stretch; }
+      #accountWorkspace > .section-head .section-title { display:flex; align-items:center; gap:12px; }
+      #accountWorkspace > .section-head .panel-actions { width:100%; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); }
+      #accountWorkspace > .section-head .btn { padding:8px; white-space:nowrap; }
+      .account-filters { padding:12px; }
+      .account-search { flex-basis:100%; }
+      .account-maintenance { margin-left:auto; }
       .topbar {
         height: auto;
         align-items: flex-start;
@@ -699,15 +926,40 @@
         flex: 1;
       }
 
-      .account-tools > * { width: 100%; }
-      .account-tools .input, .account-tools .btn { flex-basis: 100%; }
       .proxy-summary { align-items: stretch; flex-direction: column; }
       .proxy-summary .btn { width: 100%; }
 
       .account-strip {
         grid-template-columns: minmax(0, 1fr);
-        max-height: 438px;
+        /* Let the queue grow with its cards; clipping here hides later cards
+           behind the following workspace on mobile. */
+        max-height: none;
+        overflow: visible;
       }
+
+      .account-card.expired::after {
+        right: 16px;
+        top: 100px;
+        font-size: 13px;
+      }
+    }
+
+    @media (max-width: 860px) {
+      .account-strip { grid-template-columns:minmax(0,1fr); }
+      .account-card { grid-template-columns:32px minmax(0,1fr); padding:12px; column-gap:10px; min-height:0; }
+      .account-header { min-height:28px; }
+      .account-status-toggle { min-height:44px; margin-block:-8px; }
+      .account-row-actions { display:none; }
+      .account-lifecycle { grid-column:1 / -1; gap:6px; }
+      .account-lifecycle.lifecycle-inactive { min-height:66px; }
+      .account-select { font-size:15px; }
+      .account-confirm-actions .btn { min-height:44px; }
+      .mobile-account-actions:not([hidden]) { display:grid; grid-column:1 / -1; gap:10px; padding:12px; border:1px solid var(--line); border-radius:10px; background:oklch(0.978 0.01 3); scroll-margin:80px 0 20px; }
+      .mobile-account-actions strong { font-size:13px; overflow-wrap:anywhere; }
+      .mobile-account-buttons { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+      .platform-main .mobile-account-buttons .btn { padding:8px 4px; }
+      .platform-main .mobile-account-buttons .btn, #accountWorkspace > .section-head .btn { min-height:44px; }
+      .mobile-account-actions p { margin:0; font-size:12px; color:var(--muted); overflow-wrap:anywhere; }
     }
 
     @media (prefers-reduced-motion: reduce) {
@@ -717,9 +969,28 @@
         scroll-behavior: auto !important;
         transition-duration: 1ms !important;
         animation-duration: 1ms !important;
+        animation-delay: 0ms !important;
+        animation-iteration-count: 1 !important;
+      }
+
+      .account-card.expired.expired-alert {
+        animation: none !important;
+      }
+
+      .account-card.expired.expired-alert::after {
+        animation: none !important;
+      }
+
+      .account-card.expired.expired-alert .avatar,
+      .account-card.expired.expired-alert .account-main {
+        animation: none !important;
       }
     }
   </style>
+  <link rel="stylesheet" href="/static/css/scan-channel.css?v=049">
+  <link rel="stylesheet" href="/static/css/multi-channel.css?v=20261109">
+  <script src="/static/js/scan-channel.js?v=094"></script>
+  <script src="/static/js/fleet-ui.js?v=20261109"></script>
 </head>
 <body>
   <div class="app">
@@ -735,7 +1006,7 @@
         <span class="status-pill" id="healthPill"><span class="status-dot"></span><span>检测服务中</span></span>
         <a class="btn secondary" href="/runs">运行管理</a>
         <a class="btn secondary" href="/docs/index.html">Swagger</a>
-        <a class="btn secondary" href="/users">用户管理</a>
+        <a class="btn secondary" id="usersNav" href="/users">用户管理</a>
         <a class="btn secondary" href="/settings">个人设置</a>
         <a class="btn primary" href="/scan">扫码添加</a>
         <button class="btn secondary" id="logoutBtn" type="button" title="退出登录">退出</button>
@@ -745,40 +1016,56 @@
     <main class="shell">
       <section class="overview" aria-label="控制台概览">
         <div class="summary">
-          <h2>选择账号，执行服务调用</h2>
-          <p class="summary-copy">首页现在聚焦运行工作流。接口详情保留在 Swagger，当前页面只放账号状态、调用配置和返回结果。</p>
+          <h2>账号工作台</h2>
           <div class="stat-row" aria-label="运行统计">
             <span class="stat-chip">账号 <strong id="accountCount">0</strong></span>
-            <span class="stat-chip">可用 <strong id="aliveCount">0</strong></span>
-            <span class="stat-chip">能力 <strong id="featureCount">0</strong></span>
-            <span class="stat-chip">权限 <strong id="currentRoleText">读取中</strong></span>
-            <span class="stat-chip">调用额度 <strong id="currentQuotaText">无限制</strong></span>
-            <span class="stat-chip">当前 <strong id="currentAccountText">未选择</strong></span>
+            <span class="stat-chip ok">可用 <strong id="aliveCount">0</strong></span>
+            <span class="stat-chip warn">待确认 <strong id="pendingCount">0</strong></span>
+            <span class="stat-chip fail">已失效 <strong id="expiredCount">0</strong></span>
+            <span hidden>能力 <strong id="featureCount">0</strong>权限 <strong id="currentRoleText">读取中</strong>调用额度 <strong id="currentQuotaText">无限制</strong>当前 <strong id="currentAccountText">未选择</strong></span>
           </div>
         </div>
-        <aside class="quick-actions" aria-label="常用动作">
-          <p>常用入口放在这里，避免把接口文档铺满首页。</p>
+        <details class="quick-actions">
+          <summary>批量操作</summary>
           <div class="inline-actions">
             <button class="btn" id="refreshAllBtn" type="button">刷新存活</button>
             <button class="btn" id="resyncAllBtn" type="button">同步资料</button>
             <button class="btn" id="syncAllQingLongBtn" type="button">同步全部账号到青龙</button>
           </div>
-        </aside>
+        </details>
       </section>
 
       <section class="account-band" id="accountWorkspace" aria-label="账号队列">
         <div class="section-head">
           <div class="section-title">
-            <h3>账号队列</h3>
-            <p>显示序号连续；内部 ID 保持不变，避免代理、会话和专属任务错绑</p>
+            <h3>我的账号</h3>
+            <p id="accountFilterCount" role="status">正在读取账号</p>
           </div>
           <div class="panel-actions">
             <button class="btn secondary" id="reloadAccountsBtn" type="button">重新加载</button>
-            <a class="btn primary" href="/scan">添加账号</a>
+            <button class="btn secondary" id="mergeChannelsBtn" type="button" title="把同一个微信在不同渠道扫出的几个 ID 合并成一个多渠道账号，脚本只需保留主账号">合并渠道</button>
+            <button class="btn secondary" id="mergeAccountsBtn" type="button" title="合并误新增的重复账号：来源账号的授权移入保留的 ID，来源 ID 会被删除">合并账号</button>
+            <button class="btn secondary" id="addAccountLinkBtn" type="button" title="生成只能录入新 YYB 账号的一次性扫码链接">新增链接</button>
+            <a class="btn primary" href="/scan">新增账号</a>
           </div>
+        </div>
+        <div class="account-filters">
+          <label class="account-search"><span class="sr-only">搜索账号</span><input class="input" id="accountSearch" type="search" placeholder="搜索昵称、备注、ID 或 OpenID" autocomplete="off"></label>
+          <label><span class="sr-only">账号状态</span><select class="input" id="accountStatusFilter"><option value="all">全部状态</option><option value="alive">可用</option><option value="pending">待确认</option><option value="expired">已失效</option></select></label>
+          <details class="account-maintenance"><summary>账号整理</summary><div class="inline-actions"><button class="btn secondary" id="repairAccountsBtn" type="button" title="清理未完成扫码残留并释放空缺 ID">清理扫码残留</button><button class="btn secondary" id="compactAccountsBtn" type="button" title="迁移现有账号到连续 ID，不删除账号">压缩账号 ID</button></div></details>
         </div>
         <div class="account-strip" id="accountStrip">
           <div class="empty-state">账号加载中</div>
+        </div>
+        <div class="mobile-account-actions" id="mobileAccountActions" hidden role="region" aria-labelledby="mobileAccountName">
+          <strong id="mobileAccountName">当前账号</strong>
+          <div class="mobile-account-buttons">
+            <button class="btn primary" id="mobileUpdateAccountBtn" type="button">更新扫码</button>
+            <a class="btn secondary" id="mobileProxySettingsLink" href="/proxies">管理代理</a>
+            <a class="btn secondary" id="mobileMultiScanLink" href="/scan">多渠道扫码</a>
+            <button class="btn secondary" id="mobileSyncAccountBtn" type="button">同步到面板</button>
+          </div>
+          <p id="mobileAccountFeedback" role="status" hidden></p>
         </div>
       </section>
 
@@ -794,11 +1081,14 @@
             <div class="selected-account">
               <span>当前账号</span>
               <strong id="selectedAccountName">未选择</strong>
+              <span class="test-provider" id="testProvider" aria-live="polite">未选择渠道</span>
             </div>
             <div class="account-tools">
               <input class="input" id="accountRemarkInput" maxlength="80" placeholder="账号备注，例如：Boom">
               <button class="btn secondary" id="saveRemarkBtn" type="button">保存备注</button>
               <button class="btn secondary" id="syncQingLongBtn" type="button">同步到面板</button>
+              <button class="btn secondary" id="updateAccountLinkBtn" type="button" title="生成只能更新当前账号的一次性扫码链接">生成更新链接</button>
+              <a class="btn secondary" id="multiScanLink" href="/scan" title="给当前账号补扫其他渠道，或重新扫码更新">多渠道扫码</a>
               <button class="btn danger" id="deleteAccountBtn" type="button">删除账号</button>
             </div>
             <div class="proxy-summary">
@@ -808,10 +1098,28 @@
               </div>
               <a class="btn secondary" id="proxySettingsLink" href="/proxies">管理代理</a>
             </div>
+            <div class="proxy-summary">
+              <div class="proxy-summary-copy">
+                <label for="accountCircuitEnabled"><input id="accountCircuitEnabled" type="checkbox" disabled aria-describedby="accountCircuitStatus"> 当前账号启用协议熔断</label>
+                <p class="field-note" id="accountCircuitStatus" role="status">选择账号后读取设置</p>
+                <span class="field-note">仅控制当前渠道账号。全局关闭时所有账号均不熔断，独立限速与黑名单不变。</span>
+                <a id="accountCircuitGlobalLink" href="/settings#circuitCard" hidden>管理全局总控</a>
+              </div>
+              <button class="btn secondary" id="saveAccountCircuit" type="button" disabled>保存账号熔断</button>
+            </div>
             <div class="form-grid">
               <div class="field">
+                <label for="protocolTokenInput">协议令牌（可选）</label>
+                <div class="protocol-token-control">
+                  <input class="input" id="protocolTokenInput" type="password" placeholder="已配置 YYB_PROTOCOL_TOKEN 时填写" autocomplete="off" spellcheck="false" aria-describedby="protocolTokenHelp">
+                  <button class="btn secondary" id="clearProtocolTokenBtn" type="button">清除令牌</button>
+                </div>
+                <span class="field-note" id="protocolTokenHelp">仅用于接口测试，刷新后清空。</span>
+              </div>
+              <div class="field">
                 <label for="featureSel">能力</label>
-                <select class="select" id="featureSel"></select>
+                <select class="select" id="featureSel" aria-describedby="featureHint"></select>
+                <span class="field-note" id="featureHint" aria-live="polite"></span>
               </div>
               <div class="field">
                 <label for="appidInput" id="appidLabel">APPID</label>
@@ -834,13 +1142,23 @@
               </div>
               <div class="field hidden" id="payloadGroup">
                 <label for="payloadInput">请求 JSON</label>
-                <textarea class="textarea" id="payloadInput" spellcheck="false">{"api_name":"getUserInfo","data":{},"env":1}</textarea>
+                <textarea class="textarea" id="payloadInput" spellcheck="false" placeholder="粘贴目标小程序的完整 operateWxData JSON"></textarea>
               </div>
             </div>
             <div class="inline-actions">
               <button class="btn primary" id="callBtn" type="button">执行调用</button>
               <button class="btn secondary" id="clearResultBtn" type="button">清空结果</button>
             </div>
+            <details class="test-command" id="testCommand">
+              <summary>测试命令</summary>
+              <div class="command-toolbar">
+                <label for="commandShell">格式</label>
+                <select class="select" id="commandShell"><option value="bash">cURL · Bash</option><option value="powershell">PowerShell</option></select>
+                <button class="btn secondary" id="copyCommandBtn" type="button">复制命令</button>
+              </div>
+              <pre class="command-preview" id="commandPreview" tabindex="0"></pre>
+              <span class="field-note">命令跟随当前账号、能力和参数。已配置协议令牌时，请先设置环境变量 YYB_PROTOCOL_TOKEN；此处不会写入页面中填写的令牌。</span>
+            </details>
           </div>
         </section>
 
@@ -853,7 +1171,7 @@
             <button class="btn secondary" id="copyResultBtn" type="button">复制</button>
           </div>
           <div class="panel-body">
-            <pre class="result-box" id="resultBox">选择账号并执行调用后，返回内容会显示在这里。</pre>
+            <pre class="result-box is-empty" id="resultBox">选择账号并执行调用后，返回内容会显示在这里。</pre>
           </div>
         </section>
 
@@ -914,6 +1232,7 @@
                 </div>
               </div>
             </details>
+            <div class="log-line" id="panelAdminNote" hidden>面板连接由管理员统一配置；扫码成功后会自动同步到已配置的面板。</div>
             <div class="log-line" id="activityLine">尚未执行操作</div>
           </div>
         </aside>
@@ -921,27 +1240,101 @@
     </main>
   </div>
 
+  <dialog class="link-dialog" id="mergeChannelsDialog" aria-labelledby="mergeChannelsTitle">
+    <div class="link-dialog-body">
+      <div class="link-dialog-head"><div><h2 id="mergeChannelsTitle">合并为多渠道账号</h2><p>同一个微信在不同渠道各扫出了一个 ID，合并后脚本只需要保留主账号，请求会在各渠道之间自动轮换。</p></div><button class="link-dialog-close" id="mergeChannelsClose" type="button" aria-label="关闭合并渠道">×</button></div>
+      <div class="field"><label for="mergeChannelsPrimary">主账号</label><select class="input" id="mergeChannelsPrimary"></select><span class="field-note">脚本和面板里使用这个 ID；已是多渠道账号的可以继续补充渠道。</span></div>
+      <div class="field"><label id="mergeChannelsListLabel">并入的账号</label><div class="fleet-pick-list" id="mergeChannelsList" role="group" aria-labelledby="mergeChannelsListLabel"></div></div>
+      <p class="link-dialog-footnote">合并前会核对微信 unionid：不是同一个微信的账号会被拒绝，可以在结果里选择仍然合并。合并不会删除任何账号，卡片上随时可以拆分。</p>
+      <div class="fleet-results" id="mergeChannelsResults" role="status" aria-live="polite"></div>
+      <div class="inline-actions" style="margin-top:16px"><button class="btn secondary" id="mergeChannelsCancelBtn" type="button">取消</button><button class="btn primary" id="mergeChannelsConfirmBtn" type="button">合并</button></div>
+    </div>
+  </dialog>
+  <dialog class="link-dialog" id="mergeAccountDialog" aria-labelledby="mergeAccountTitle">
+    <div class="link-dialog-body">
+      <div class="link-dialog-head"><div><h2 id="mergeAccountTitle">合并误新增账号</h2><p>将误新增账号的授权移入原 ID，不按昵称自动判断身份。</p></div><button class="link-dialog-close" id="mergeAccountClose" type="button" aria-label="关闭合并">×</button></div>
+      <div class="field"><label for="mergeSourceAccount">来源账号（合并后删除此 ID）</label><select class="input" id="mergeSourceAccount"></select></div>
+      <div class="field"><label for="mergeTargetAccount">保留的原账号 ID</label><select class="input" id="mergeTargetAccount"></select></div>
+      <p class="link-dialog-footnote">保留原 ID 的代理、归属、备注、任务和推送设置，替换其登录授权并清理旧会话及授权链接。请确认两条记录属于你的同一微信；手动维护的来源 ID / 旧 OpenID 引用需要更新。</p>
+      <p class="link-dialog-footnote" id="mergeAccountPreview" role="status">先预览，再确认合并。来源有专属任务时需先处理任务。</p>
+      <div class="inline-actions" style="margin-top:16px"><button class="btn secondary" id="mergeAccountPreviewBtn" type="button">预览合并</button><button class="btn danger" id="mergeAccountConfirmBtn" type="button" disabled>确认合并</button></div>
+    </div>
+  </dialog>
+  <dialog class="link-dialog" id="accountLinkDialog" aria-labelledby="accountLinkDialogTitle">
+    <div class="link-dialog-body">
+      <div class="link-dialog-head">
+        <div>
+          <h2 id="accountLinkDialogTitle">生成扫码链接</h2>
+          <p id="accountLinkDialogDescription">链接只可使用一次，生成后请直接交给授权人。</p>
+        </div>
+        <button class="link-dialog-close" id="accountLinkDialogClose" type="button" aria-label="关闭">×</button>
+      </div>
+      <form id="accountLinkConfigPane">
+        <div class="field">
+          <label><input id="accountLinkMulti" type="checkbox"> 开放多渠道授权</label>
+          <span class="field-note">允许同一微信逐个扫码，分别保存各渠道并归组。原账号 ID 保留，点击“完成授权”或到期后链接失效。</span>
+        </div>
+        <div class="field" id="accountLinkProductField">
+          <label for="accountLinkProduct">本次扫码渠道</label>
+          <select class="input" id="accountLinkProduct"><option value="appstore">YYB</option><option value="pcmgr">PCMgr</option><option value="gameassist">GameAssist</option></select>
+          <span class="field-note" id="accountLinkProductNote">切换前会说明影响，扫码成功后保留原账号 ID。</span>
+        </div>
+        <div class="field">
+          <label for="accountLinkTTL">链接有效期（分钟）</label>
+          <input class="input" id="accountLinkTTL" type="number" min="1" max="10080" step="1" inputmode="numeric">
+          <span class="field-note">范围 1 到 10080 分钟。二维码刷新不会消耗链接有效期。</span>
+        </div>
+        <div class="inline-actions" style="margin-top:16px">
+          <button class="btn secondary" id="accountLinkCancelBtn" type="button">取消</button>
+          <button class="btn primary" id="accountLinkGenerateBtn" type="submit">生成链接</button>
+        </div>
+      </form>
+      <section id="accountLinkExistingPane" class="link-dialog-existing" hidden>
+        <div class="link-dialog-meta" id="accountLinkExistingSummary"></div>
+        <div id="accountLinkExistingList"></div>
+      </section>
+      <section id="accountLinkResultPane" hidden>
+        <div class="link-dialog-url">
+          <input class="input" id="accountLinkURL" type="text" readonly aria-label="授权链接分享内容">
+          <button class="btn secondary" id="accountLinkCopyBtn" type="button">复制分享内容</button>
+        </div>
+        <div class="link-dialog-meta" id="accountLinkExpiry"></div>
+        <div class="inline-actions" style="margin-top:16px">
+          <a class="btn primary" id="accountLinkOpenBtn" href="#" target="_blank" rel="noopener">打开链接</a>
+          <button class="btn secondary" id="accountLinkDoneBtn" type="button">完成</button>
+        </div>
+        <p class="link-dialog-footnote">请勿公开转发或保存二维码。单渠道成功后失效；多渠道需点击“完成授权”，也会按原有效期到期。</p>
+      </section>
+    </div>
+  </dialog>
+
   <script>
     const state = {
       accounts: [],
       features: [
         { name: "getCode", label: "/wx/code 获取小程序 code", route: "/wx/code", requiresAppID: true },
-        { name: "getUserInfo", label: "/wx/getuserinfo 用户信息", route: "/wx/getuserinfo", requiresAppID: false },
+        { name: "getUserInfo", label: "/wx/getuserinfo 渠道账号资料", route: "/wx/getuserinfo", requiresAppID: false },
         { name: "encryptKey", label: "/wx/encryptkey 加密能力转发", route: "/wx/encryptkey", requiresAppID: true, needsPayload: true },
+        { name: "latestUserKey", label: "/wx/getlatestuserkey 用户最新加密密钥", route: "/wx/getlatestuserkey", requiresAppID: true, needsPayload: true },
         { name: "getPhoneNumber", label: "/wx/getphonenumber 手机号", route: "/wx/getphonenumber", requiresAppID: true },
-        { name: "cloud", label: "/wx/cloud 云函数", route: "/wx/cloud", requiresAppID: true, needsPayload: true },
+        { name: "cloud", label: "/wx/cloud 通用数据转发", route: "/wx/cloud", requiresAppID: true, needsPayload: true },
         { name: "qrcodeauth", label: "/wx/qrcodeauth 二维码授权", route: "/wx/qrcodeauth", requiresAppID: false, requiresAccount: false },
-        { name: "mpGetA8Key", label: "/wx/mpgeta8key 文章会话", route: "/wx/mpgeta8key", requiresAppID: true, needsPayload: true },
-        { name: "appmsgext", label: "/wx/appmsgext 文章阅读数", route: "/wx/appmsgext", requiresAppID: true, needsPayload: true },
-        { name: "appmsglike", label: "/wx/appmsglike 文章点赞", route: "/wx/appmsglike", requiresAppID: true, needsPayload: true },
-        { name: "oauth", label: "/wx/oauth 公众号授权", route: "/wx/oauth", requiresAppID: true }
+        { name: "mpGetA8Key", label: "/wx/mpgeta8key 文章会话转发（未验证）", route: "/wx/mpgeta8key", requiresAppID: true, needsPayload: true },
+        { name: "appmsgext", label: "/wx/appmsgext 文章数据转发（未验证）", route: "/wx/appmsgext", requiresAppID: true, needsPayload: true },
+        { name: "appmsglike", label: "/wx/appmsglike 文章点赞转发（未验证）", route: "/wx/appmsglike", requiresAppID: true, needsPayload: true },
+        { name: "oauth", label: "/wx/oauth 公众号授权链接（仅生成）", route: "/wx/oauth", requiresAppID: true }
       ],
-	  proxyConfigs: new Map(),
+      proxyConfigs: new Map(),
       selectedOpenID: "",
-      lastResult: ""
+      lastResult: "",
+      // Ids that were already expired at the last render. It stays null until the
+      // first render, so opening the page never replays failures that are old.
+      expiredSeen: null,
+      syncingAccount: false
     };
 
     const $ = id => document.getElementById(id);
+    const mobileAccountLayout = matchMedia("(max-width: 860px)");
 
     $("logoutBtn").addEventListener("click", async () => {
       await fetch("/logout", { method: "POST" });
@@ -957,8 +1350,57 @@
         .replaceAll("'", "&#039;");
     }
 
-    async function api(method, url, body) {
-      const options = { method, headers: { "Content-Type": "application/json" } };
+    function accountLinkShareText(kind, account, url) {
+      if (kind !== "update") return `新增账号：${url}`;
+      const name = typeof account === "string"
+        ? account
+        : account?.remark || account?.nickname || account?.alias || `账号 ${account?.id || ""}`;
+      return `更新：${name || "指定账号"}：${url}`;
+    }
+
+    async function copyText(value, fallbackInput = null) {
+      const text = String(value ?? "");
+      if (!text) throw new Error("empty text");
+      if (window.isSecureContext && navigator.clipboard?.writeText) {
+        try {
+          await navigator.clipboard.writeText(text);
+          return true;
+        } catch {
+          // Continue with the legacy browser fallback below.
+        }
+      }
+      let input = fallbackInput;
+      let temporary = false;
+      if (!input) {
+        input = document.createElement("textarea");
+        temporary = true;
+        input.setAttribute("readonly", "");
+        input.style.position = "fixed";
+        input.style.left = "-9999px";
+        input.style.top = "0";
+        input.style.opacity = "0";
+        input.value = text;
+        document.body.appendChild(input);
+      } else if ("value" in input) {
+        input.value = text;
+      }
+      input.focus();
+      input.select();
+      input.setSelectionRange(0, text.length);
+      let copied = false;
+      try {
+        copied = document.execCommand("copy");
+      } catch {
+        copied = false;
+      }
+      if (temporary && copied) input.remove();
+      if (temporary && !copied) setTimeout(() => input.remove(), 15000);
+      if (!copied) throw new Error("clipboard unavailable");
+      return true;
+    }
+
+    async function api(method, url, body, headers = {}) {
+      const options = { method, headers: { "Content-Type": "application/json", ...headers } };
       if (body !== undefined) options.body = JSON.stringify(body);
       const response = await fetch(url, options);
       const text = await response.text();
@@ -983,18 +1425,36 @@
       return isEnvelope ? data.data : data;
     }
 
+    async function applyRoleVisibility() {
+      try {
+        const session = await api("GET", "/api/auth/me");
+        const isAdmin = session?.auth_enabled === false || session?.user?.role === "admin";
+        $("currentRoleText").textContent = isAdmin ? "管理员" : "普通用户";
+        ["usersNav", "syncAllQingLongBtn", "repairAccountsBtn", "compactAccountsBtn"].forEach(id => {
+          const element = $(id);
+          if (element) element.hidden = !isAdmin;
+        });
+        $("qingLongSettings").hidden = !isAdmin;
+		$("accountCircuitGlobalLink").hidden = !isAdmin;
+        document.querySelector(".account-maintenance").hidden = !isAdmin;
+        $("panelAdminNote").hidden = isAdmin;
+      } catch {
+        $("currentRoleText").textContent = "未知";
+      }
+    }
+
     function accountName(account) {
       return account.remark || account.nickname || account.alias || account.openid || "未命名账号";
     }
 
     function accountNumber(account) {
-      const index = state.accounts.findIndex(item => item.openid === account?.openid);
-      return index >= 0 ? index + 1 : "-";
+      return account?.id ?? "-";
     }
 
     function statusText(status) {
       if (status === "alive") return "可用";
       if (status === "expired") return "需重扫";
+      if (status === "session_only") return "需补授权";
       return "待确认";
     }
 
@@ -1018,8 +1478,60 @@
       return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
     }
 
+    function lifecycleDuration(seconds) {
+      if (!Number.isFinite(seconds)) return "未记录";
+      if (seconds <= 0) return "已到期";
+      if (seconds < 60) return "不足1分钟";
+      const days = Math.floor(seconds / 86400);
+      const hours = Math.floor((seconds % 86400) / 3600);
+      if (days > 0) return `${days}天${hours}小时`;
+      const minutes = Math.floor((seconds % 3600) / 60);
+      if (hours > 0) return `${hours}小时${minutes}分钟`;
+      return `${minutes}分钟`;
+    }
+
+    function lifecycleColor(ratio) {
+      const value = Math.max(0, Math.min(1, Number(ratio) || 0));
+      // Keep the lifecycle ramp continuous: red at expiry, vivid yellow in
+      // the middle, and green while there is plenty of time left.
+      const hue = 8 + value * 112;
+      return `hsl(${Math.round(hue)} 78% 42%)`;
+    }
+
+    function lifecycleMarkup(account) {
+      if (account.status === "expired") return '<span class="account-lifecycle lifecycle-inactive">保活已停止 · 重新扫码后恢复</span>';
+      if (account.status === "session_only") return '<span class="account-lifecycle lifecycle-inactive">授权已失效 · 仅尝试原会话，请重新扫码</span>';
+      if (account.scan_product === 'ldplayer' || account.scan_product === 'qbbrowser' && !account.credential_expires_at) return '<span class="account-lifecycle lifecycle-inactive">有效期未知 · 自动续期尚未验证，以实际取码结果为准</span>';
+      const now = Math.floor(Date.now() / 1000);
+      if(account.scan_product==='qbbrowser'){
+        const due=Number(account.credential_expires_at),remaining=Math.max(0,due-now),interval=Number(account.credential_expires_in||due-now),ratio=interval>0?Math.min(1,remaining/interval):0;
+        return `<span class="account-lifecycle" aria-label="QQ 浏览器凭据有效期"><span class="lifecycle-row"><span class="lifecycle-label">访问凭据</span><span class="lifecycle-track"><span style="--lifecycle-color:${lifecycleColor(ratio)};width:${(ratio*100).toFixed(1)}%"></span></span><span class="lifecycle-value">${remaining?lifecycleDuration(remaining):'待刷新'}</span></span><span class="lifecycle-note">按上游期限刷新 · 长期寿命待验证</span></span>`;
+      }
+      if(account.scan_product==='pcmgr'){
+		const due=Number(account.credential_expires_at||0),remaining=Math.max(0,due-now),interval=Number(account.credential_expires_in||86400),ratio=Math.min(1,remaining/interval);
+		return `<span class="account-lifecycle" aria-label="PCMgr 续期计划"><span class="lifecycle-row" title="计划执行续期的时间，不代表服务端真实有效期"><span class="lifecycle-label">下次续期</span><span class="lifecycle-track"><span style="--lifecycle-color:${lifecycleColor(ratio)};width:${(ratio*100).toFixed(1)}%"></span></span><span class="lifecycle-value">${due?remaining?lifecycleDuration(remaining):'待续期':'未记录'}</span></span><span class="lifecycle-note">PCMgr · 续期计划，非实际有效期</span></span>`;
+	  }
+      const observed = Number(account.refresh_token_observed_at || 0);
+      const scanWindow = 30 * 86400;
+      const scanRemaining = observed ? Math.max(0, scanWindow - (now - observed)) : 0;
+      const scanRatio = observed ? Math.min(100, Math.max(0, scanRemaining / scanWindow * 100)) : 0;
+      const expiresAt = Number(account.credential_expires_at || 0);
+      const expiresIn = Number(account.credential_expires_in || 7200);
+      const autoRemaining = expiresAt ? Math.max(0, expiresAt - now) : 0;
+      const autoRatio = expiresAt ? Math.min(100, Math.max(0, autoRemaining / expiresIn * 100)) : 0;
+      const scanClass = !observed || scanRemaining <= 0 ? "expired" : scanRemaining < 5 * 86400 ? "warn" : "scan";
+      const autoClass = !expiresAt || autoRemaining <= 0 ? "expired" : autoRemaining < 15 * 60 ? "warn" : "";
+      return `<span class="account-lifecycle" aria-label="账号有效期">
+        <span class="lifecycle-row ${autoClass}"><span class="lifecycle-label">${account.scan_product === 'gameassist' ? '刷新计划' : '保活凭据'}</span><span class="lifecycle-track"><span style="--lifecycle-color:${lifecycleColor(autoRatio / 100)};width:${autoRatio.toFixed(1)}%"></span></span><span class="lifecycle-value">${expiresAt ? lifecycleDuration(autoRemaining) : "未记录"}</span></span>
+        <span class="lifecycle-row ${scanClass}" title="扫码后30天的重新授权提醒，不保证服务端在此期间持续可用"><span class="lifecycle-label">重扫提醒</span><span class="lifecycle-track"><span style="--lifecycle-color:${lifecycleColor(scanRatio / 100)};width:${scanRatio.toFixed(1)}%"></span></span><span class="lifecycle-value">${observed ? lifecycleDuration(scanRemaining) : "未记录"}</span></span>
+        <span class="lifecycle-note">${observed ? `扫码 ${formatChecked(observed)}` : "扫码时间未记录"}${account.credential_expires_at ? ` · 到期 ${formatChecked(account.credential_expires_at)}` : ""}</span>
+      </span>`;
+    }
+
     function setActivity(message) {
       $("activityLine").textContent = message;
+      $("mobileAccountFeedback").textContent = message;
+      $("mobileAccountFeedback").hidden = message === "账号列表已加载" || message.startsWith("已选择账号：");
     }
 
     function setResult(value, meta, isError) {
@@ -1027,6 +1539,7 @@
       state.lastResult = text;
       $("resultBox").textContent = text;
       $("resultBox").classList.toggle("error", Boolean(isError));
+      $("resultBox").classList.remove("is-empty");
       $("resultMeta").textContent = meta || "已更新";
     }
 
@@ -1042,28 +1555,101 @@
       $("accountRemarkInput").value = selected?.remark || "";
       $("accountRemarkInput").disabled = !selected;
       $("saveRemarkBtn").disabled = !selected;
-      $("syncQingLongBtn").disabled = !selected;
+      $("syncQingLongBtn").disabled = !selected || state.syncingAccount;
+      $("mobileSyncAccountBtn").disabled = !selected || state.syncingAccount;
+      $("updateAccountLinkBtn").disabled = !selected;
+      $("addAccountLinkBtn").disabled = !selected;
       $("syncAllQingLongBtn").disabled = state.accounts.length === 0;
       $("deleteAccountBtn").disabled = !selected;
+      $("mergeAccountsBtn").disabled = state.accounts.length < 2;
+      $("mergeChannelsBtn").disabled = state.accounts.length < 2;
+      $("multiScanLink").href = selected ? FleetUI.scanHref(selected) : "/scan?multi=1";
       $("proxySettingsLink").href = selected ? `/proxies?ref=${encodeURIComponent(selected.id)}` : "/proxies";
       document.querySelectorAll(".account-card").forEach(card => {
-        const selected = card.dataset.openid === state.selectedOpenID;
+        // A multi-channel card is selected when any of its accounts is.
+        const members = card.dataset.memberOpenids ? JSON.parse(card.dataset.memberOpenids) : [card.dataset.openid];
+        const selected = members.includes(state.selectedOpenID);
         card.classList.toggle("selected", selected);
-        card.setAttribute("aria-pressed", String(selected));
+        card.querySelector(".account-select").setAttribute("aria-pressed", String(selected));
+        card.querySelectorAll(".fleet-member").forEach(row => row.classList.toggle("selected", row.dataset.openid === state.selectedOpenID));
       });
+      placeMobileAccountActions();
+      updateFeatureHint();
+    }
+
+    function placeMobileAccountActions() {
+      const dock = $("mobileAccountActions");
+      const account = getSelectedAccount();
+      const card = document.querySelector(".account-card.selected");
+      dock.hidden = !mobileAccountLayout.matches || !account || !card;
+      if (dock.hidden) return;
+      $("mobileAccountName").textContent = `ID ${account.id} · ${accountName(account)}`;
+      $("mobileProxySettingsLink").href = `/proxies?ref=${encodeURIComponent(account.id)}`;
+      $("mobileMultiScanLink").href = FleetUI.scanHref(account);
+      if (card.nextElementSibling !== dock) card.after(dock);
+    }
+
+    function parkMobileAccountActions() {
+      const dock = $("mobileAccountActions");
+      dock.hidden = true;
+      $("accountWorkspace").appendChild(dock);
     }
 
     function renderStats() {
       $("accountCount").textContent = String(state.accounts.length);
       $("aliveCount").textContent = String(state.accounts.filter(item => item.status === "alive").length);
+      $("expiredCount").textContent = String(state.accounts.filter(item => item.status === "expired").length);
+      $("pendingCount").textContent = String(state.accounts.filter(item => item.status !== "alive" && item.status !== "expired").length);
       $("featureCount").textContent = String(state.features.length);
       syncSelectedAccount();
     }
 
+    function selectAccount(account) {
+      state.selectedOpenID = account.openid;
+      const params = new URLSearchParams(location.search);
+      params.set("ref", account.id);
+      history.replaceState(null, "", `/?${params}`);
+      syncSelectedAccount();
+      loadAccountProxySummary();
+      setActivity(`已选择账号：${accountName(account)}`);
+      requestAnimationFrame(() => {
+        const dock = $("mobileAccountActions");
+        if (!dock.hidden) dock.scrollIntoView({ block:"nearest", behavior:matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
+      });
+    }
+
+    async function setAccountStatus(account, status, control) {
+      const number = accountNumber(account);
+      if (status === "expired" && !confirm(`确认将账号 ${number} 标记为已失效，并从青龙移除？`)) return;
+      control.disabled = true;
+      try {
+        const result = await api("POST", "/accounts/status", { ref: String(account.id), status });
+        const index = state.accounts.findIndex(item => item.id === account.id);
+        if (index >= 0) state.accounts[index] = result.account;
+        renderAccounts();
+        setActivity(status === "expired" ? `账号 ${number} 已标记失效，青龙关联已清理` : `账号 ${number} 已确认仍有效`);
+      } catch (error) {
+        control.disabled = false;
+        setActivity(`账号状态更新失败：${error.message}`);
+      }
+    }
+
     function renderAccounts() {
       const strip = $("accountStrip");
+      parkMobileAccountActions();
+      const query = $("accountSearch").value.trim().toLocaleLowerCase();
+      const filter = $("accountStatusFilter").value;
+      const visible = state.accounts.filter(account => {
+        const status = account.status === "alive" || account.status === "expired" ? account.status : "pending";
+        return (filter === "all" || status === filter) && (!query || [accountName(account), account.nickname, account.remark, account.id, account.openid].some(value => String(value ?? "").toLocaleLowerCase().includes(query)));
+      });
+      // Accounts of one fleet share a card, shown whenever one of them matches.
+      const matched = new Set(visible.map(account => account.id));
+      const shown = FleetUI.groups(state.accounts).filter(group => group.members.some(member => matched.has(member.id)));
+      const fleetCount = shown.filter(FleetUI.isFleet).length;
+      $("accountFilterCount").textContent = `显示 ${shown.reduce((sum, group) => sum + group.members.length, 0)} / ${state.accounts.length} 个账号${fleetCount ? ` · ${fleetCount} 个多渠道账号` : ""}`;
       if (!state.accounts.length) {
-        strip.innerHTML = `<div class="empty-state">暂无账号，点击“添加账号”开始扫码。</div>`;
+        strip.innerHTML = `<div class="empty-state">暂无账号，点击“新增账号”开始扫码。</div>`;
         state.selectedOpenID = "";
         renderStats();
         return;
@@ -1074,18 +1660,26 @@
       }
 
       strip.innerHTML = "";
-      for (const account of state.accounts) {
+      const previouslyExpired = state.expiredSeen;
+      if (!visible.length) strip.innerHTML = '<div class="empty-state">没有匹配的账号，试试其他关键词或状态。</div>';
+      for (const group of shown) {
+        if (FleetUI.isFleet(group)) {
+          strip.appendChild(FleetUI.card(group, previouslyExpired));
+          continue;
+        }
+        const account = group.primary;
         const name = accountName(account);
 		const proxy = proxyText(state.proxyConfigs.get(String(account.id)));
-        const cls = account.rescan_recommended ? "warning" : statusClass(account.status);
-        const status = account.rescan_recommended ? "建议重扫" : statusText(account.status);
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = "account-card";
+        const isExpired = account.status === "expired";
+        const cls = isExpired ? "expired" : account.rescan_recommended ? "warning" : statusClass(account.status);
+        const status = isExpired ? "已失效" : account.status === "session_only" ? "需补授权" : account.rescan_recommended ? "建议重扫" : statusText(account.status);
+        const pendingConfirmation = account.status !== "alive" && account.status !== "expired" && account.status !== "session_only";
+        const button = document.createElement("article");
+        const justExpired = isExpired && previouslyExpired !== null && !previouslyExpired.has(account.id);
+        button.className = `account-card ${cls}${justExpired ? " expired-alert" : ""}`;
         button.dataset.openid = account.openid;
-        button.setAttribute("aria-pressed", "false");
+        if (isExpired) button.dataset.stateLabel = "已失效";
         const number = accountNumber(account);
-        button.setAttribute("aria-label", `选择账号 ${number}，${name}`);
         button.innerHTML = `
           <span class="avatar">
             <img alt="" src="/accounts/avatar?ref=${encodeURIComponent(account.openid)}">
@@ -1093,31 +1687,51 @@
           </span>
           <span class="account-main">
             <span class="account-header">
-              <span class="account-name">${escapeHTML(name)}</span>
-              <span class="account-status ${cls}" title="${account.rescan_recommended ? "RefreshToken 已使用约 25 天，建议在失效前重新扫码" : ""}"><span class="status-dot"></span>${status}</span>
+              <button type="button" class="account-name account-select" aria-pressed="false" aria-label="选择账号 ${escapeHTML(number)}，${escapeHTML(name)}，${status}">${escapeHTML(name)}</button>
+              <span class="account-header-tools">
+              ${pendingConfirmation
+                ? `<button type="button" class="account-status account-status-toggle ${cls}" aria-expanded="false" aria-controls="confirm-account-${account.id}" aria-label="确认账号 ${escapeHTML(number)} 的状态"><span class="status-dot"></span>${status}<svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></button>`
+                : `<span class="account-status ${cls}" title="${account.status === "session_only" ? "授权已拒绝，原会话可尝试使用，不代表保活恢复" : account.rescan_recommended ? "RefreshToken 已使用约 25 天，建议在失效前重新扫码" : ""}"><span class="status-dot"></span>${status}</span>`}
+              <span class="scan-channel-badge" title="扫码渠道：${scanChannelName(account.scan_product)}" aria-label="${scanChannelName(account.scan_product)} 渠道"><img alt="" src="/static/images/scan-${scanChannelBadge(account.scan_product)}.png?v=095"></span>
+              </span>
             </span>
-            <span class="account-meta" title="显示序号 ${number} · 内部 ID: ${escapeHTML(account.id)} · UIN: ${escapeHTML(account.uin ?? "-")} · ${escapeHTML(proxy)} · ${formatChecked(account.last_checked_at)}">账号 ${number} · ${escapeHTML(proxy)} · ${formatChecked(account.last_checked_at)}</span>
+            <span class="account-meta" title="最后检查 ${formatChecked(account.last_checked_at)}">ID ${escapeHTML(number)} · ${escapeHTML(proxy)}${!isExpired && state.proxyConfigs.get(String(account.id))?.keepalive_supported === false ? " · 不可保活" : ""}</span>
             <span class="account-openid" title="OpenID: ${escapeHTML(account.openid)}">OpenID: ${escapeHTML(account.openid)}</span>
           </span>
+          ${lifecycleMarkup(account)}
+          <span class="account-row-actions"><button type="button" class="btn secondary" data-update-account aria-label="更新 ${escapeHTML(name)} 的扫码">更新</button><a class="btn secondary" href="${FleetUI.scanHref(account)}" aria-label="给 ${escapeHTML(name)} 扫更多渠道">多渠道扫码</a><a class="btn secondary" href="/proxies?ref=${encodeURIComponent(account.id)}" aria-label="管理 ${escapeHTML(name)} 的代理">代理</a></span>
+          ${pendingConfirmation ? `<div class="account-confirm-actions" id="confirm-account-${account.id}" hidden><span>确认账号状态</span><button type="button" class="btn small" data-confirm-status="alive">仍有效</button><button type="button" class="btn small danger" data-confirm-status="expired">已失效</button></div>` : ""}
         `;
         button.querySelector("img").addEventListener("error", event => {
           event.currentTarget.classList.add("hidden");
           button.querySelector(".avatar-letter").classList.remove("hidden");
         });
-        button.addEventListener("click", () => {
-          state.selectedOpenID = account.openid;
-          history.replaceState(null, "", `/?ref=${encodeURIComponent(account.id)}`);
-          syncSelectedAccount();
-          loadAccountProxySummary();
-          setActivity(`已选择账号：${name}`);
+        button.addEventListener("click", () => selectAccount(account));
+        button.querySelector("[data-update-account]").addEventListener("click", event => {
+          event.stopPropagation();
+          button.click();
+          openAccountLinkDialog("update");
         });
+        button.querySelectorAll(".account-row-actions a").forEach(link => link.addEventListener("click", event => event.stopPropagation()));
+        button.querySelector(".account-status-toggle")?.addEventListener("click", event => {
+          event.stopPropagation();
+          const toggle = event.currentTarget;
+          const expanded = toggle.getAttribute("aria-expanded") !== "true";
+          toggle.setAttribute("aria-expanded", String(expanded));
+          button.querySelector(".account-confirm-actions").hidden = !expanded;
+        });
+        button.querySelectorAll("[data-confirm-status]").forEach(action => action.addEventListener("click", event => {
+          event.stopPropagation();
+          setAccountStatus(account, action.dataset.confirmStatus, action);
+        }));
         strip.appendChild(button);
       }
+      state.expiredSeen = new Set(state.accounts.filter(item => item.status === "expired").map(item => item.id));
       renderStats();
-      loadAccountProxySummary();
     }
 
     async function loadAccountProxySummary() {
+      loadAccountCircuit();
       const account = getSelectedAccount();
       if (!account) {
         $("accountProxyStatus").textContent = "选择账号后读取配置";
@@ -1130,11 +1744,62 @@
         if (state.selectedOpenID !== openid) return;
 		state.proxyConfigs.set(String(account.id), config);
 		const prefix = account.status === "expired" ? "账号需重扫，配置已保留 · " : "";
-		$("accountProxyStatus").textContent = `${prefix}${proxyText(config)}${config.configured ? ` · ${config.proxy_type === "socks5" ? "SOCKS5" : "HTTP CONNECT"}` : ""}`;
+		$("accountProxyStatus").textContent = `${prefix}${proxyText(config)}${config.configured ? ` · ${config.proxy_type === "socks5" ? "SOCKS5" : "HTTP CONNECT"}` : ""}${config.keepalive_supported === false ? " · 短效代理，不可用于保活" : ""}`;
       } catch (error) {
         if (state.selectedOpenID === openid) $("accountProxyStatus").textContent = `读取失败：${error.message}`;
       }
     }
+
+    let circuitLoadSequence = 0;
+    let circuitSaving = false;
+    let circuitMasterEnabled = false;
+    async function loadAccountCircuit() {
+      const sequence = ++circuitLoadSequence;
+      const account = getSelectedAccount();
+      $("accountCircuitEnabled").disabled = true;
+      $("accountCircuitEnabled").checked = false;
+      $("saveAccountCircuit").disabled = true;
+      $("accountCircuitStatus").textContent = account ? "正在读取熔断设置" : "选择账号后读取设置";
+      if (!account) { $("accountCircuitEnabled").checked = false; return; }
+      try {
+        const data = await api("GET", `/accounts/circuit-settings?ref=${encodeURIComponent(account.id)}`);
+        if (sequence !== circuitLoadSequence) return;
+        circuitMasterEnabled = data.global_enabled;
+        $("accountCircuitEnabled").checked = data.effective;
+        $("accountCircuitStatus").textContent = !data.global_enabled ? `当前不生效：全局总控已关闭。账号原设置：${data.account_enabled ? "开启" : "关闭"}，总控开启后恢复。` : data.effective ? "当前生效：此账号启用熔断" : "当前生效：此账号已关闭熔断";
+        $("accountCircuitEnabled").disabled = circuitSaving || !data.global_enabled;
+        $("saveAccountCircuit").disabled = circuitSaving || !data.global_enabled;
+      } catch (error) {
+        if (sequence === circuitLoadSequence) $("accountCircuitStatus").textContent = `读取失败：${error.message}，请刷新重试`;
+      }
+    }
+    $("saveAccountCircuit").addEventListener("click", async () => {
+      const account = getSelectedAccount();
+      if (!account || circuitSaving || !circuitMasterEnabled) return;
+      const enabled = $("accountCircuitEnabled").checked;
+      circuitSaving = true;
+      $("accountCircuitEnabled").disabled = true;
+      $("saveAccountCircuit").disabled = true;
+      let saveError = "";
+      try {
+        await api("PUT", `/accounts/circuit-settings?ref=${encodeURIComponent(account.id)}`, {enabled});
+        setActivity(`账号 ID ${account.id} 熔断设置已保存`);
+      } catch (error) {
+        saveError = error.message;
+        setActivity(`保存熔断设置失败：${error.message}`);
+      } finally {
+        circuitSaving = false;
+        await loadAccountCircuit();
+        if (saveError && getSelectedAccount()?.id === account.id) $("accountCircuitStatus").textContent = `保存失败：${saveError}。当前选择已重新读取，请重试。`;
+      }
+    });
+
+    window.addEventListener("storage", event => {
+      if (event.key === "yyb-circuit-settings-changed" && !circuitSaving) loadAccountCircuit();
+    });
+    window.addEventListener("focus", () => {
+      if (!circuitSaving) loadAccountCircuit();
+    });
 
     function renderFeatures() {
       const select = $("featureSel");
@@ -1143,10 +1808,14 @@
         togglePayload();
         return;
       }
-      select.innerHTML = state.features.map(feature => {
-        const label = feature.label || feature.name;
-        return `<option value="${escapeHTML(feature.name)}" data-name="${escapeHTML(feature.name)}">${escapeHTML(label)}</option>`;
-      }).join("");
+      const groups = [
+        ["小程序", ["getCode", "encryptKey", "latestUserKey", "getPhoneNumber", "cloud"]],
+        ["渠道账号", ["getUserInfo", "qrcodeauth"]],
+        ["未验证的兼容转发", ["mpGetA8Key", "appmsgext", "appmsglike"]],
+        ["公众号授权链接", ["oauth"]]
+      ];
+      select.innerHTML = groups.map(([label, names]) => `<optgroup label="${label}">${state.features.filter(feature => names.includes(feature.name)).map(feature =>
+        `<option value="${escapeHTML(feature.name)}" data-name="${escapeHTML(feature.name)}">${escapeHTML(feature.label || feature.name)}</option>`).join("")}</optgroup>`).join("");
       togglePayload();
       renderStats();
     }
@@ -1172,6 +1841,92 @@
       $("oauthStateGroup").classList.toggle("hidden", !isOAuth);
       $("appidLabel").textContent = isOAuth ? "公众号 AppID" : "APPID";
       $("appidInput").placeholder = isOAuth ? "wx...（18 位公众号 AppID）" : "小程序 AppID";
+      updateFeatureHint();
+    }
+
+    function updateFeatureHint() {
+      const feature = currentFeatureName();
+      const account = getSelectedAccount();
+      const product = scanChannelName(account?.scan_product);
+      $("testProvider").textContent = account ? product : "系统默认渠道";
+      for (const option of $("featureSel").options) {
+        const item = state.features.find(item => item.name === option.dataset.name);
+        if (!item) continue;
+        option.textContent = item.name === "getPhoneNumber" ? `${item.route} ${product} 手机号 · ${product === "PCMgr" ? "1141" : "1020"}`
+          : item.name === "getUserInfo" ? `${item.route} ${product === "PCMgr" ? "PCMgr 扫码资料" : "YYB 渠道资料"}` : item.label;
+      }
+      const hints = {
+        getCode: "小程序取码，不能替代原生 APP 或公众号授权。",
+        getUserInfo: product === "PCMgr" ? "读取扫码时保存的渠道资料，不检测小程序登录态。" : "读取渠道账号资料，不是目标小程序的加密资料。",
+        encryptKey: "通过 1133 转发，需要完整 JSON；以返回的 err_no 判断结果。",
+        latestUserKey: "通过 1133 转发 webapi_getuserencryptkey，以返回的 err_no 判断结果。",
+        getPhoneNumber: product === "PCMgr" ? "原生 1141 路径，已通过单个目标实测；仍需目标小程序支持及真实授权。" : "原有 1020 兼容路径，需要目标小程序支持及真实授权。",
+        cloud: "通用 operateWxData 转发，需要真实业务参数，不自动生成云函数请求。",
+        qrcodeauth: "新建当前渠道二维码；生成成功不代表已扫码登录。",
+        mpGetA8Key: "仅兼容转发，尚未实现独立公众号 A8Key 链路。",
+        appmsgext: "仅兼容转发，尚未验证文章接口可用。",
+        appmsglike: "仅兼容转发，尚未验证文章接口可用；提交可能产生点赞操作。",
+        oauth: "仅生成授权链接，需要在微信完成授权，不会直接返回 code。"
+      };
+      $("featureHint").textContent = `${product} · ${hints[feature] || "选择要测试的接口。"}`;
+      updateTestCommand();
+    }
+
+    function featureRequest() {
+      const feature = currentFeature(), account = getSelectedAccount();
+      if (!account && feature?.requiresAccount !== false) throw new Error("请先选择一个账号。");
+      const endpoint = currentFeatureName(), appID = $("appidInput").value.trim();
+      if (!endpoint) throw new Error("当前没有可调用能力。");
+      if (feature?.requiresAppID !== false && !appID) throw new Error("请输入 APPID。");
+      const isOAuth = endpoint === "oauth", isQRCodeAuth = endpoint === "qrcodeauth";
+      const protocolRef = account && endpoint !== "getUserInfo" && account.fleet_primary_id ? String(account.fleet_primary_id) : account?.openid;
+      const body = isQRCodeAuth ? (account ? {product: account.scan_product || "appstore"} : undefined)
+        : isOAuth ? {ref: String(account.id), appid: appID, redirect_uri: $("oauthRedirectInput").value.trim(), scope: $("oauthScopeInput").value, state: $("oauthStateInput").value.trim()}
+        : {ref: protocolRef};
+      if (!isOAuth && feature?.requiresAppID !== false) body.app_id = appID;
+      if (isOAuth && !body.redirect_uri) throw new Error("请填写公众号回调地址。");
+      if (feature?.needsPayload) {
+        const raw = $("payloadInput").value.trim();
+        if (!raw) throw new Error("operateWxData 需要请求 JSON。");
+        try { body.payload = JSON.parse(raw); } catch { throw new Error("请求 JSON 格式不正确。"); }
+        if (!body.payload || typeof body.payload !== "object" || Array.isArray(body.payload)) throw new Error("请求 JSON 必须是对象。");
+      }
+      return {feature, account, endpoint, isOAuth, body, route: feature.route};
+    }
+
+    function updateTestCommand() {
+      const output = $("commandPreview"), button = $("copyCommandBtn");
+      try {
+        const {route, body} = featureRequest();
+        const url = location.origin + route, payload = body === undefined ? "" : JSON.stringify(body);
+        if ($("commandShell").value === "powershell") {
+          const quote = value => "'" + value.replaceAll("'", "''") + "'";
+          output.textContent = `Invoke-RestMethod -Method Post -Uri ${quote(url)} -ContentType 'application/json' -Headers @{ Authorization = "Bearer $env:YYB_PROTOCOL_TOKEN" }${payload ? ` -Body ${quote(payload)}` : ""}`;
+        } else {
+          const quote = value => "'" + value.replaceAll("'", "'\"'\"'") + "'";
+          output.textContent = `curl --request POST ${quote(url)} \\\n  --header 'Content-Type: application/json' \\\n  --header "Authorization: Bearer \${YYB_PROTOCOL_TOKEN}"${payload ? ` \\\n  --data-raw ${quote(payload)}` : ""}`;
+        }
+        button.disabled = false;
+      } catch (error) {
+        output.textContent = error.message;
+        button.disabled = true;
+      }
+    }
+
+    function protocolResultFailure(result) {
+      let value = result?.result || result;
+      for (let depth = 0; depth < 4 && value; depth++) {
+        if (typeof value === "string") {
+          try { value = JSON.parse(value); } catch { break; }
+        }
+        if (!value || typeof value !== "object") break;
+        for (const key of ["err_no", "errcode", "ret"]) {
+          if (typeof value[key] === "number" && value[key] !== 0) return `${key}=${value[key]}`;
+        }
+        if (typeof value.base_resp?.ret === "number" && value.base_resp.ret !== 0) return `ret=${value.base_resp.ret}`;
+        value = value.data;
+      }
+      return "";
     }
 
     async function loadHealth() {
@@ -1188,10 +1943,13 @@
       }
     }
 
-    async function loadAccounts() {
-      $("accountStrip").innerHTML = `<div class="empty-state">账号加载中</div>`;
+    async function loadAccounts({background = false} = {}) {
+      if (!background) {
+        parkMobileAccountActions();
+        $("accountStrip").innerHTML = `<div class="empty-state">账号加载中</div>`;
+      }
       try {
-        state.accounts = await api("GET", "/accounts");
+        state.accounts = await api("GET", "/accounts?include_members=1");
 		state.proxyConfigs.clear();
 		await Promise.all(state.accounts.map(async account => {
 		  try { state.proxyConfigs.set(String(account.id), await api("GET", `/accounts/proxy?ref=${encodeURIComponent(account.id)}`)); } catch { /* Selected account reports details. */ }
@@ -1202,10 +1960,81 @@
           : null;
         if (requestedAccount) state.selectedOpenID = requestedAccount.openid;
         renderAccounts();
+        await loadAccountProxySummary();
         setActivity("账号列表已加载");
       } catch (error) {
-        $("accountStrip").innerHTML = `<div class="empty-state">账号加载失败：${escapeHTML(error.data?.detail || error.message)}</div>`;
+        if (!background) {
+          parkMobileAccountActions();
+          $("accountStrip").innerHTML = `<div class="empty-state">账号加载失败：${escapeHTML(error.data?.detail || error.message)}</div>`;
+        }
         setActivity("账号列表加载失败");
+      }
+    }
+
+    async function repairAccounts() {
+      const button = $("repairAccountsBtn");
+      button.disabled = true;
+      button.textContent = "检查中";
+      try {
+        const preview = await api("POST", "/accounts/repair", { confirm: false });
+        const candidates = preview.candidates || [];
+        if (!candidates.length) {
+          setActivity("账号整理完成，没有发现未完成扫码残留");
+          return;
+        }
+        const ids = candidates.map(item => `ID ${item.id}`).join("、");
+        const confirmed = window.confirm(
+          `发现 ${candidates.length} 条未完成扫码残留：${ids}\n\n` +
+          `确认清理这些残留记录？\n` +
+          `正常账号、已过期账号和现有账号 ID 不会被重排。释放的 ID 会在下次成功扫码时自动复用。`
+        );
+        if (!confirmed) {
+          setActivity("已取消账号整理");
+          return;
+        }
+        button.textContent = "整理中";
+        const result = await api("POST", "/accounts/repair", { confirm: true });
+        await loadAccounts();
+        const skipped = result.skipped?.length || 0;
+        setActivity(`账号整理完成，清理 ${result.removed_count || 0} 条${skipped ? `，保留 ${skipped} 条` : ""}`);
+      } catch (error) {
+        setActivity(`账号整理失败：${error.data?.detail || error.message}`);
+      } finally {
+        button.disabled = false;
+        button.textContent = "一键整理";
+      }
+    }
+
+    async function compactAccounts() {
+      const button = $("compactAccountsBtn");
+      button.disabled = true;
+      button.textContent = "检查中";
+      try {
+        const preview = await api("POST", "/accounts/compact", { confirm: false });
+        const changes = preview.changes || [];
+        if (!changes.length) {
+          setActivity("账号 ID 已连续，无需迁移");
+          return;
+        }
+        const detail = changes.map(item => `${item.label}：ID ${item.old_id} → ${item.new_id}`).join("\n");
+        const confirmed = window.confirm(
+          `将迁移 ${changes.length} 个现有账号的 ID：\n\n${detail}\n\n` +
+          `账号内容、OpenID、代理、会话、备注和用户归属都会保留。\n` +
+          `确认执行？依赖旧 ID 的外部脚本环境变量会同步改写。`
+        );
+        if (!confirmed) {
+          setActivity("已取消账号 ID 压缩");
+          return;
+        }
+        button.textContent = "迁移中";
+        const result = await api("POST", "/accounts/compact", { confirm: true });
+        await loadAccounts();
+        setActivity(`账号 ID 压缩完成，迁移 ${result.changed_count || 0} 个${result.qinglong_synced ? "，青龙环境变量已同步" : ""}`);
+      } catch (error) {
+        setActivity(`账号 ID 压缩失败：${error.data?.detail || error.message}`);
+      } finally {
+        button.disabled = false;
+        button.textContent = "压缩账号 ID";
       }
     }
 
@@ -1275,9 +2104,12 @@
 
     async function syncQingLong() {
       const account = getSelectedAccount();
-      if (!account) return;
+      if (!account || state.syncingAccount) return;
       const button = $("syncQingLongBtn");
+      state.syncingAccount = true;
       button.disabled = true;
+      $("mobileSyncAccountBtn").disabled = true;
+      setActivity(`正在同步账号 ${account.id} 到面板…`);
       try {
         const saved = await api("PUT", "/accounts/remark", { ref: String(account.id), remark: $("accountRemarkInput").value });
         const index = state.accounts.findIndex(item => item.id === account.id);
@@ -1286,13 +2118,170 @@
         renderAccounts();
         const panelName = $("qingLongType").value === "daidai" ? "呆呆面板" : $("qingLongType").value === "arcadia" ? "Arcadia" : "青龙";
         const number = accountNumber(account);
-        setActivity(result.added ? `账号 ${number} 已添加到${panelName} YYB_SERVER` : `${panelName} YYB_SERVER 已包含账号 ${number}`);
+        const listed = result.synced_id && result.synced_id !== account.id ? `${number}（多渠道账号，面板列出主账号 ${result.synced_id}）` : number;
+        setActivity(result.added ? `账号 ${listed} 已添加到${panelName} YYB_SERVER` : `${panelName} YYB_SERVER 已包含账号 ${listed}`);
       } catch (error) {
         setActivity(`同步面板失败：${error.message}`);
         if (error.message.includes("配置")) $("qingLongSettings").open = true;
       } finally {
-        button.disabled = false;
+        state.syncingAccount = false;
+        button.disabled = !getSelectedAccount();
+        $("mobileSyncAccountBtn").disabled = !getSelectedAccount();
       }
+    }
+
+    let pendingAccountLinkKind = "";
+    let pendingAccountLinkAccount = null;
+    let confirmedAccountLinkProduct = "";
+    let mergePreviewKey = "", mergeBusy = false;
+
+    function resetMergePreview() {
+      mergePreviewKey = "";
+      $("mergeAccountConfirmBtn").disabled = true;
+      $("mergeAccountPreview").textContent = "先预览，再确认合并。来源有专属任务时需先处理任务。";
+    }
+
+    function openMergeAccountDialog() {
+      if (state.accounts.length < 2) return;
+      const options = state.accounts.map(account => `<option value="${account.id}">ID ${account.id} · ${escapeHTML(accountName(account))} · ${scanChannelName(account.scan_product)}</option>`).join("");
+      $("mergeSourceAccount").innerHTML = options; $("mergeTargetAccount").innerHTML = options;
+      const source = getSelectedAccount() || state.accounts.at(-1);
+      $("mergeSourceAccount").value = String(source.id);
+      $("mergeTargetAccount").value = String(state.accounts.find(account => account.id !== source.id).id);
+      resetMergePreview(); $("mergeAccountDialog").showModal();
+    }
+
+    async function mergeAccount(confirm) {
+      if (mergeBusy || confirm && !mergePreviewKey) return;
+      mergeBusy = true;
+      const source = $("mergeSourceAccount").value, target = $("mergeTargetAccount").value;
+      $("mergeAccountPreviewBtn").disabled = true; $("mergeAccountConfirmBtn").disabled = true;
+      $("mergeSourceAccount").disabled = true; $("mergeTargetAccount").disabled = true;
+      $("mergeAccountPreview").textContent = confirm ? "正在合并，请稍候…" : "正在核对账号…";
+      try {
+        const result = await api("POST", "/accounts/merge", {source_ref:source,target_ref:target,confirm,preview_key:mergePreviewKey});
+        if (!confirm) {
+          mergePreviewKey = result.preview_key;
+          $("mergeAccountPreview").textContent = `将 ID ${result.source.id}（${accountName(result.source)}，${scanChannelName(result.source.scan_product)}）的授权移入 ID ${result.target.id}。来源 ID ${result.source.id} 将删除。${result.note}`;
+        } else {
+          $("mergeAccountDialog").close(); mergePreviewKey = "";
+          const params = new URLSearchParams(location.search); params.set("ref", result.account.id); history.replaceState(null,"",`/?${params}`);
+          await loadAccounts({background:true});
+          setActivity(result.warning || `已合并到 ID ${result.account.id}，来源 ID ${result.removed_id} 已释放`);
+        }
+      } catch(error) {
+        mergePreviewKey = ""; $("mergeAccountPreview").textContent = error.message;
+      } finally {
+        mergeBusy = false; $("mergeAccountPreviewBtn").disabled = false; $("mergeAccountConfirmBtn").disabled = !mergePreviewKey;
+        $("mergeSourceAccount").disabled = false; $("mergeTargetAccount").disabled = false;
+      }
+    }
+
+    function openAccountLinkDialog(kind) {
+      const account = getSelectedAccount();
+      if (!account) return;
+      const defaultMinutes = kind === "update" ? 10 : 30;
+      pendingAccountLinkKind = kind;
+      pendingAccountLinkAccount = account;
+      confirmedAccountLinkProduct = account.scan_product || "appstore";
+      $("accountLinkProduct").value = confirmedAccountLinkProduct;
+      $("accountLinkMulti").checked = false;
+      $("accountLinkProduct").disabled = false;
+      $("accountLinkProductNote").textContent = "切换前会说明影响，扫码成功后保留原账号 ID。";
+      $("accountLinkProductField").hidden = kind !== "update";
+      $("accountLinkDialogTitle").textContent = kind === "update" ? "生成更新链接" : "生成新增链接";
+      $("accountLinkDialogDescription").textContent = kind === "update"
+        ? `更新 ${account.remark || account.nickname || `账号 ${account.id}`}，可为本次链接选择渠道`
+        : "可扫码添加任意未录入的 YYB 账号，复制时自动加新增提示";
+      $("accountLinkTTL").value = String(defaultMinutes);
+      $("accountLinkConfigPane").hidden = false;
+      $("accountLinkExistingPane").hidden = true;
+      $("accountLinkResultPane").hidden = true;
+      const dialog = $("accountLinkDialog");
+      if (typeof dialog.showModal === "function") dialog.showModal();
+      else dialog.setAttribute("open", "");
+      requestAnimationFrame(() => $("accountLinkTTL").focus());
+    }
+
+    function closeAccountLinkDialog() {
+      const dialog = $("accountLinkDialog");
+      if (dialog.open && typeof dialog.close === "function") dialog.close();
+      else dialog.removeAttribute("open");
+      pendingAccountLinkKind = "";
+      pendingAccountLinkAccount = null;
+    }
+
+    async function createAccountLink() {
+      const kind = pendingAccountLinkKind;
+      const account = pendingAccountLinkAccount;
+      if (!kind || !account) return;
+      const minutes = Number($("accountLinkTTL").value);
+      if (!Number.isInteger(minutes) || minutes < 1 || minutes > 10080) {
+        $("accountLinkTTL").setCustomValidity("请输入 1 到 10080 分钟之间的整数");
+        $("accountLinkTTL").reportValidity();
+        return;
+      }
+      $("accountLinkTTL").setCustomValidity("");
+      const button = $("accountLinkGenerateBtn");
+      button.disabled = true;
+      button.textContent = "正在生成";
+      try {
+        const multi = $("accountLinkMulti").checked;
+        const product = kind === "update" ? (multi ? account.scan_product || "appstore" : $("accountLinkProduct").value) : "";
+        const result = await api("POST", "/api/account-links", { kind, ref: String(account.id), ttl_seconds: minutes * 60, product, allow_multi_channel:multi, confirm_switch:!multi && kind === "update" && product !== (account.scan_product || "appstore") && product === confirmedAccountLinkProduct });
+        const shareText = accountLinkShareText(kind, account, result.url);
+        let copied = true;
+        try { await copyText(shareText, $("accountLinkURL")); } catch { copied = false; }
+        const label = kind === "update" ? "更新链接" : "新增链接";
+        setActivity(`${label}已生成 · ${Math.ceil((result.expires_at - Math.floor(Date.now() / 1000)) / 60)} 分钟有效${copied ? "，已复制" : "，链接已选中，请按 Ctrl+C"}`);
+        $("accountLinkDialogTitle").textContent = `${label}已生成`;
+        $("accountLinkDialogDescription").textContent = kind === "update"
+          ? "复制内容已带更新提示，也可以单独打开原链接。"
+          : "复制内容已带新增账号提示，也可以单独打开原链接。";
+        $("accountLinkConfigPane").hidden = true;
+        $("accountLinkResultPane").hidden = false;
+        $("accountLinkURL").value = shareText;
+        $("accountLinkOpenBtn").href = result.url;
+        $("accountLinkExpiry").textContent = `有效期至 ${new Date(result.expires_at * 1000).toLocaleString()}。${result.allow_multi_channel ? '已开放多渠道，授权人点击“完成授权”后链接失效。' : '成功授权后链接立即失效。'}`;
+        renderExistingAccountLinks(result.existing || []);
+        requestAnimationFrame(() => $("accountLinkCopyBtn").focus());
+      } catch (error) {
+        const existing = error.status === 409 && Array.isArray(error.data?.existing)
+          ? error.data.existing : [];
+        if (existing.length) {
+          $("accountLinkDialogTitle").textContent = "已有未消费链接，未创建新链接";
+          $("accountLinkDialogDescription").textContent = "为避免重复占用资源，本次请求已在生成前拦截。请直接使用现有链接，或先作废后再生成。";
+          $("accountLinkExistingPane").hidden = false;
+          $("accountLinkResultPane").hidden = true;
+          renderExistingAccountLinks(existing, true);
+          setActivity(`已有 ${existing.length} 条未消费链接，本次未创建新链接`);
+        } else {
+          setActivity(`${kind === "update" ? "更新" : "新增"}链接生成失败：${error.message}`);
+        }
+      } finally {
+        button.disabled = false;
+        button.textContent = "生成链接";
+      }
+    }
+
+    function renderExistingAccountLinks(items, blocked = false) {
+      const pane = $("accountLinkExistingPane");
+      if (!items.length) { pane.hidden = true; return; }
+      pane.hidden = false;
+      $("accountLinkExistingSummary").textContent = blocked
+        ? `已拦截：该账号已有 ${items.length} 条未消费链接。使用现有链接，或作废后再生成。`
+        : `该账号已有 ${items.length} 条未消费链接。`;
+      $("accountLinkExistingList").innerHTML = items.map(item => `<div class="link-dialog-existing-row"><span>链接 ${item.id}${item.allow_multi_channel ? ' · 多渠道' : item.product ? ` · ${scanChannelName(item.product)}` : ''} · 有效期至 ${new Date(item.expires_at * 1000).toLocaleString()}</span><span class="inline-actions"><button class="btn secondary" type="button" data-existing-copy="${item.id}">复制</button><a class="btn secondary" href="${item.url || '#'}" target="_blank" rel="noopener">打开</a><button class="btn secondary" type="button" data-existing-revoke="${item.id}">作废</button></span></div>`).join("");
+      const account = pendingAccountLinkAccount;
+      $("accountLinkExistingList").querySelectorAll("[data-existing-copy]").forEach(button => button.onclick = async () => { const item = items.find(entry => String(entry.id) === button.dataset.existingCopy); if (!item?.url) return; try { await copyText(accountLinkShareText(item.kind || pendingAccountLinkKind, account, item.url)); button.textContent = "已复制"; setTimeout(() => { button.textContent = "复制"; }, 1600); } catch { setActivity("分享内容已选中，请按 Ctrl+C"); } });
+      $("accountLinkExistingList").querySelectorAll("[data-existing-revoke]").forEach(button => button.onclick = async () => {
+        try {
+          await api("POST", `/api/account-links/${button.dataset.existingRevoke}/revoke`);
+          button.closest(".link-dialog-existing-row").remove();
+          if (!$("accountLinkExistingList").children.length) $("accountLinkExistingPane").hidden = true;
+          setActivity("旧授权链接已作废并删除");
+        } catch (error) { setActivity(`作废失败：${error.message}`); }
+      });
     }
 
     async function syncAllQingLong() {
@@ -1383,7 +2372,7 @@
       try {
         const result = await api("POST", "/accounts/refresh");
         setResult(result, "存活刷新完成", false);
-        await loadAccounts();
+        await loadAccounts({background:true});
       } catch (error) {
         setResult(error.data || error.message, "存活刷新失败", true);
       } finally {
@@ -1399,7 +2388,7 @@
       try {
         const result = await api("POST", "/accounts/resync");
         setResult(result, "资料同步完成", false);
-        await loadAccounts();
+        await loadAccounts({background:true});
       } catch (error) {
         setResult(error.data || error.message, "资料同步失败", true);
       } finally {
@@ -1409,55 +2398,10 @@
     }
 
     async function callFeature() {
-      const feature = currentFeature();
-      const account = getSelectedAccount();
-      if (!account && feature?.requiresAccount !== false) {
-        setResult("请先选择一个账号。", "缺少账号", true);
-        return;
-      }
-
-      const endpoint = currentFeatureName();
-      const appID = $("appidInput").value.trim();
-      if (!endpoint) {
-        setResult("当前没有可调用能力。", "缺少能力", true);
-        return;
-      }
-      if (feature?.requiresAppID !== false && !appID) {
-        setResult("请输入 APPID。", "缺少 APPID", true);
-        return;
-      }
-
-      const isOAuth = endpoint.toLowerCase() === "oauth";
-      const isQRCodeAuth = feature?.name === "qrcodeauth";
-      const body = isQRCodeAuth
-        ? undefined
-        : isOAuth
-        ? {
-            ref: String(account.id),
-            appid: appID,
-            redirect_uri: $("oauthRedirectInput").value.trim(),
-            scope: $("oauthScopeInput").value,
-            state: $("oauthStateInput").value.trim()
-          }
-        : { ref: account.openid };
-      if (!isOAuth && feature?.requiresAppID !== false) body.app_id = appID;
-      if (isOAuth && !body.redirect_uri) {
-        setResult("请填写公众号回调地址。", "缺少回调地址", true);
-        return;
-      }
-      if (feature?.needsPayload) {
-        const raw = $("payloadInput").value.trim();
-        if (!raw) {
-          setResult("operateWxData 需要请求 JSON。", "缺少 payload", true);
-          return;
-        }
-        try {
-          body.payload = JSON.parse(raw);
-        } catch {
-          setResult("请求 JSON 格式不正确。", "JSON 解析失败", true);
-          return;
-        }
-      }
+      let request;
+      try { request = featureRequest(); }
+      catch (error) { setResult(error.message, "请补全请求", true); return; }
+      const {feature, account, endpoint, isOAuth, body, route} = request;
 
       const button = $("callBtn");
       button.disabled = true;
@@ -1466,49 +2410,144 @@
       setActivity(`正在调用 ${endpoint}${account ? `：${accountName(account)}` : ""}`);
 
       try {
-        const result = await api("POST", feature?.route || (isOAuth ? "/wx/oauth" : `/wxapp/${endpoint}`), body);
+        const token = $("protocolTokenInput").value.trim().replace(/^Bearer\s+/i, "").trim();
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        const result = await api("POST", route, body, headers);
+        $("protocolTokenInput").removeAttribute("aria-invalid");
         const seconds = ((performance.now() - startedAt) / 1000).toFixed(1);
-        setResult(result, `调用完成，用时 ${seconds}s`, false);
-        await loadAccounts();
+        const failure = protocolResultFailure(result);
+        const outcome = failure ? `上游拒绝：${failure}`
+          : isOAuth ? "已生成链接，待微信授权"
+          : endpoint === "getUserInfo" ? "已读取渠道资料"
+          : feature?.needsPayload || endpoint === "getPhoneNumber" ? "转发完成，请检查内层业务结果"
+          : "调用完成";
+        setResult(result, `${outcome} · ${seconds}s`, Boolean(failure));
+        await loadAccounts({background:true});
       } catch (error) {
-        setResult(error.data || error.message, `调用失败 ${error.status || ""}`.trim(), true);
+        if (error.status === 401) {
+          $("protocolTokenInput").setAttribute("aria-invalid", "true");
+          $("protocolTokenInput").focus();
+          setResult("协议令牌缺失或错误，请填写 YYB_PROTOCOL_TOKEN 后重试。", "调用失败 401", true);
+        } else {
+          const ticketRefused = /PCMgr GetLoginBuffer rejected: code=1\b/.test(error.message);
+          const requestRefused = error.data?.request_rejected === true;
+          const detail = ticketRefused ? `PCMgr 取票据失败（20138/1），本次接口未执行。请核对该渠道的小程序授权。\n\n${error.message}` : error.payload || error.message;
+          setResult(detail, ticketRefused ? "渠道取票据失败" : requestRefused ? "应用请求被拒绝，账号授权已保留" : `调用失败 ${error.status || ""}`.trim(), true);
+        }
       } finally {
         button.disabled = false;
       }
     }
 
     $("reloadAccountsBtn").addEventListener("click", loadAccounts);
+    $("mergeAccountsBtn").addEventListener("click", openMergeAccountDialog);
+    FleetUI.bindMergeDialog();
+    $("mergeAccountClose").addEventListener("click", () => { if (!mergeBusy) $("mergeAccountDialog").close(); });
+    $("mergeAccountDialog").addEventListener("cancel", event => { if (mergeBusy) event.preventDefault(); });
+    $("mergeSourceAccount").addEventListener("change", resetMergePreview);
+    $("mergeTargetAccount").addEventListener("change", resetMergePreview);
+    $("mergeAccountPreviewBtn").addEventListener("click", () => mergeAccount(false));
+    $("mergeAccountConfirmBtn").addEventListener("click", () => mergeAccount(true));
+    $("accountSearch").addEventListener("input", renderAccounts);
+    $("accountStatusFilter").addEventListener("change", renderAccounts);
+    $("repairAccountsBtn").addEventListener("click", repairAccounts);
+    $("compactAccountsBtn").addEventListener("click", compactAccounts);
     $("refreshAllBtn").addEventListener("click", refreshAll);
     $("resyncAllBtn").addEventListener("click", resyncAll);
     $("syncAllQingLongBtn").addEventListener("click", syncAllQingLong);
     $("saveRemarkBtn").addEventListener("click", saveRemark);
     $("syncQingLongBtn").addEventListener("click", syncQingLong);
+    $("mobileSyncAccountBtn").addEventListener("click", syncQingLong);
+    $("mobileUpdateAccountBtn").addEventListener("click", () => openAccountLinkDialog("update"));
+    mobileAccountLayout.addEventListener("change", placeMobileAccountActions);
+    $("updateAccountLinkBtn").addEventListener("click", () => openAccountLinkDialog("update"));
+    $("addAccountLinkBtn").addEventListener("click", () => openAccountLinkDialog("add"));
+    $("accountLinkConfigPane").addEventListener("submit", event => { event.preventDefault(); createAccountLink(); });
+    $("accountLinkMulti").addEventListener("change", () => {
+      $("accountLinkProduct").disabled = $("accountLinkMulti").checked;
+      $("accountLinkProductNote").textContent = $("accountLinkMulti").checked
+        ? "多渠道分别保存并归组，保留原账号渠道和 ID。"
+        : "切换前会说明影响，扫码成功后保留原账号 ID。";
+    });
+    $("accountLinkProduct").addEventListener("change", async () => {
+      const account = pendingAccountLinkAccount;
+      if (!account) return;
+      const product = $("accountLinkProduct").value;
+      $("accountLinkGenerateBtn").disabled = true;
+      try {
+        if (product !== (account.scan_product || "appstore") && !await confirmScanChannelSwitch({from:account.scan_product || "appstore",to:product,account:`账号 ID ${account.id}`})) {
+          $("accountLinkProduct").value = confirmedAccountLinkProduct;
+          return;
+        }
+        confirmedAccountLinkProduct = product;
+      } finally { $("accountLinkGenerateBtn").disabled = false; }
+    });
+    $("accountLinkDialogClose").addEventListener("click", closeAccountLinkDialog);
+    $("accountLinkCancelBtn").addEventListener("click", closeAccountLinkDialog);
+    $("accountLinkDoneBtn").addEventListener("click", closeAccountLinkDialog);
+    $("accountLinkCopyBtn").addEventListener("click", async () => { try { await copyText($("accountLinkURL").value, $("accountLinkURL")); setActivity("分享内容已复制"); $("accountLinkCopyBtn").textContent = "已复制"; setTimeout(() => $("accountLinkCopyBtn").textContent = "复制分享内容", 1600); } catch { $("accountLinkURL").focus(); $("accountLinkURL").select(); setActivity("分享内容已选中，请按 Ctrl+C"); } });
+    $("accountLinkDialog").addEventListener("cancel", event => { event.preventDefault(); closeAccountLinkDialog(); });
     $("deleteAccountBtn").addEventListener("click", deleteAccount);
     $("saveQingLongBtn").addEventListener("click", saveQingLongConfig);
     $("clearQingLongBtn").addEventListener("click", clearQingLongConfig);
-    $("featureSel").addEventListener("change", togglePayload);
+    $("featureSel").addEventListener("change", () => {
+      togglePayload();
+      const input = $("payloadInput");
+      const example = '{"api_name":"webapi_getuserencryptkey","data":{},"env":1}';
+      if (["encryptKey", "latestUserKey"].includes(currentFeatureName()) && !input.value.trim()) input.value = example;
+      else if (!["encryptKey", "latestUserKey"].includes(currentFeatureName()) && input.value === example) input.value = "";
+      updateTestCommand();
+    });
+    for (const id of ["appidInput", "payloadInput", "oauthRedirectInput", "oauthStateInput"]) $(id).addEventListener("input", updateTestCommand);
+    $("oauthScopeInput").addEventListener("change", updateTestCommand);
+    $("commandShell").addEventListener("change", updateTestCommand);
+    $("copyCommandBtn").addEventListener("click", async () => {
+      try { await copyText($("commandPreview").textContent); setActivity("测试命令已复制，请先设置 YYB_PROTOCOL_TOKEN 环境变量"); }
+      catch { setActivity("复制失败，请选中测试命令后复制"); }
+    });
+    $("protocolTokenInput").addEventListener("input", () => $("protocolTokenInput").removeAttribute("aria-invalid"));
+    $("clearProtocolTokenBtn").addEventListener("click", () => {
+      $("protocolTokenInput").value = "";
+      $("protocolTokenInput").removeAttribute("aria-invalid");
+      $("protocolTokenInput").focus();
+    });
+    window.addEventListener("pagehide", () => { $("protocolTokenInput").value = ""; });
     $("callBtn").addEventListener("click", callFeature);
-    $("clearResultBtn").addEventListener("click", () => setResult("结果已清空。", "等待调用", false));
+    $("clearResultBtn").addEventListener("click", () => {
+      setResult("结果已清空。", "等待调用", false);
+      $("resultBox").classList.add("is-empty");
+    });
     $("copyResultBtn").addEventListener("click", async () => {
       try {
-        await navigator.clipboard.writeText(state.lastResult || $("resultBox").textContent);
+        await copyText(state.lastResult || $("resultBox").textContent);
         setActivity("结果已复制");
       } catch {
-        setActivity("复制失败，请手动选择结果内容");
+        setActivity("结果已选中，请按 Ctrl+C 完成复制");
       }
     });
 
-    const focusTarget = new URLSearchParams(location.search).get("focus");
-    if (focusTarget === "accounts" || focusTarget === "test") {
-      requestAnimationFrame(() => document.getElementById(focusTarget === "accounts" ? "accountWorkspace" : "callWorkspace")?.scrollIntoView({ behavior: "smooth", block: "start" }));
-    }
+    window.addEventListener("popstate", () => {
+      const ref = new URLSearchParams(location.search).get("ref");
+      const account = ref ? state.accounts.find(item => String(item.id) === ref || item.openid === ref) : state.accounts[0];
+      if (account && account.openid !== state.selectedOpenID) {
+        state.selectedOpenID = account.openid;
+        syncSelectedAccount();
+        loadAccountProxySummary();
+      }
+    });
 
+    applyRoleVisibility();
     loadHealth();
     loadFeatures();
-    loadAccounts();
+    // The channel list is the server's; cards and the update dialog redraw when it differs from the built-in one.
+    loadScanChannels().then(() => { FleetUI.fillLinkProducts(); if (state.accounts.length) renderAccounts(); });
+    loadAccounts().then(() => {
+      const focusTarget = new URLSearchParams(location.search).get("focus");
+      if (focusTarget === "accounts" || focusTarget === "test") document.getElementById(focusTarget === "accounts" ? "accountWorkspace" : "callWorkspace")?.scrollIntoView({ block:"start" });
+    });
     loadQingLongConfig();
     setInterval(loadHealth, 15000);
   </script>
-  <script src="/static/js/platform.js?v=20260824-push1"></script>
+  <script src="/static/js/platform.js?v=20261103-skin"></script>
 </body>
 </html>

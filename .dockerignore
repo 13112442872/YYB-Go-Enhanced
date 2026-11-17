@@ -2,9 +2,10 @@
 .env
 data
 backups
+.deploy-backups
+.codex-tmp
 artifacts
 releases
-Dockerfile
 compose.yaml
 resource/db
 resource/avatars

@@ -19,17 +19,18 @@ import (
 )
 
 type accountProxyIn struct {
-	Product             string `json:"product"`
-	Ref                 string `json:"ref"`
-	Mode                string `json:"mode"`
-	ProxyType           string `json:"proxy_type"`
-	StaticProxy         string `json:"static_proxy"`
-	APIURL              string `json:"api_url"`
-	ProviderProfileID   *int64 `json:"provider_profile_id"`
-	RegionCode          string `json:"region_code"`
-	RegionProvince      string `json:"region_province"`
-	RegionCity          string `json:"region_city"`
-	RefreshAheadMinutes int64  `json:"refresh_ahead_minutes"`
+	Product             string  `json:"product"`
+	Ref                 string  `json:"ref"`
+	Mode                string  `json:"mode"`
+	ProxyType           string  `json:"proxy_type"`
+	StaticProxy         string  `json:"static_proxy"`
+	APIURL              string  `json:"api_url"`
+	ProviderProfileID   *int64  `json:"provider_profile_id"`
+	RegionCode          string  `json:"region_code"`
+	RegionProvince      string  `json:"region_province"`
+	RegionCity          string  `json:"region_city"`
+	RefreshAheadMinutes int64   `json:"refresh_ahead_minutes"`
+	ProtocolProxyMode   *string `json:"protocol_proxy_mode"`
 }
 
 const loginProductAppStore = "appstore"
@@ -39,8 +40,8 @@ func normalizeLoginProduct(product string) (string, error) {
 	if product == "" {
 		return loginProductAppStore, nil
 	}
-	if product != loginProductAppStore {
-		return "", fmt.Errorf("登录产品 %q 尚未完成凭据兑换验证，目前仅支持 appstore", product)
+	if !qr.IsScanChannel(product) {
+		return "", fmt.Errorf("不支持的扫码渠道 %q", product)
 	}
 	return product, nil
 }
@@ -50,9 +51,24 @@ type qrLoginSession struct {
 	Client    *qr.Client
 	ProxySpec proxysource.Spec
 	ProxyIn   accountProxyIn
+	// Optional one-time account-link binding. Zero means a normal console QR.
+	AccountLinkID   int64
+	AccountLinkHash string
+	AccountLinkMode string
+	BaseAccountID   int64
+	SwitchConfirmed bool
+	// A successful multi-channel link confirmation can be retried after a lost response.
+	LinkSavedAccount *store.AccountPublic
+	// DeferPanelSync postpones the automation panel sync after the scan is
+	// confirmed. A multi-channel scan is bound into one fleet by the console right
+	// after each confirmation, and the panel lists a fleet by its primary only.
+	DeferPanelSync bool
 	// Keep the freshly fetched image in memory so the image endpoint does not
 	// depend on the QR cache directory being writable in a container.
 	ImageBytes []byte
+	// mu serializes cancellation with the final account write in confirm.
+	mu        sync.Mutex
+	cancelled bool
 }
 
 type accountProxyLease struct {
@@ -80,15 +96,34 @@ func proxySpecFromSetting(setting *store.AccountProxySetting) proxysource.Spec {
 func proxySettingPublic(setting *store.AccountProxySetting, account *store.WechatAccount) map[string]any {
 	expiresIn := protocol.CredentialsFromMap(account.Credentials).ExpiresIn
 	tokenTTLMinutes := (expiresIn + 59) / 60
+	dynamic := setting.Mode == "api"
+	lifetimeClass := "stable"
+	keepaliveSupported := true
+	keepaliveNote := "可参与自动保活"
+	if dynamic {
+		lifetimeClass = "short"
+		keepaliveSupported = false
+		keepaliveNote = "短效代理，无法用于账号保活；仅用于扫码和临时请求"
+	}
 	return map[string]any{
 		"account_id": setting.AccountID, "mode": setting.Mode, "proxy_type": setting.ProxyType,
 		"static_proxy": setting.StaticProxy, "api_url": setting.APIURL,
 		"provider_profile_id": setting.ProviderProfileID,
 		"region_code":         setting.RegionCode, "region_province": setting.RegionProvince, "region_city": setting.RegionCity,
 		"refresh_ahead_minutes": setting.RefreshAheadSeconds / 60,
+		"protocol_proxy_mode":   setting.ProtocolProxyMode,
 		"token_ttl_minutes":     tokenTTLMinutes,
-		"configured":            setting.Mode != "direct", "updated_at": setting.UpdatedAt,
+		"lifetime_class":        lifetimeClass, "keepalive_supported": keepaliveSupported, "keepalive_note": keepaliveNote,
+		"proxy_warning": proxyWarning(dynamic),
+		"configured":    setting.Mode != "direct", "updated_at": setting.UpdatedAt,
 	}
+}
+
+func proxyWarning(dynamic bool) string {
+	if dynamic {
+		return "短效代理每次提取都会产生新的出口，无法稳定维持微信登录会话；后台自动保活已关闭。"
+	}
+	return ""
 }
 
 func (a *App) handleAccountProxy(w http.ResponseWriter, r *http.Request) {
@@ -229,6 +264,19 @@ func (a *App) resolveProxySpec(ctx context.Context, spec proxysource.Spec) (stri
 	return proxysource.Resolve(ctx, client, spec)
 }
 
+// Protocol calls can explicitly use direct egress without extracting a proxy.
+// QR login, profile queries and credential refresh keep using resolveAccountProxy.
+func (a *App) resolveWXAppProxy(ctx context.Context, accountID int64) (string, bool, error) {
+	setting, err := a.db.GetAccountProxySetting(ctx, accountID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return "", false, err
+	}
+	if err == nil && setting.ProtocolProxyMode == "direct" {
+		return "", false, nil
+	}
+	return a.resolveAccountProxy(ctx, accountID)
+}
+
 func (a *App) resolveAccountProxy(ctx context.Context, accountID int64) (string, bool, error) {
 	setting, err := a.db.GetAccountProxySetting(ctx, accountID)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -253,8 +301,12 @@ func (a *App) resolveAccountProxy(ctx context.Context, accountID int64) (string,
 		return proxyValue, false, err
 	}
 	leaseLock := a.proxyLeaseLockFor(accountID)
-	leaseLock.Lock()
-	defer leaseLock.Unlock()
+	select {
+	case leaseLock <- struct{}{}:
+	case <-ctx.Done():
+		return "", false, ctx.Err()
+	}
+	defer func() { <-leaseLock }()
 	a.proxyMu.Lock()
 	if lease, ok := a.proxyLeases[accountID]; ok && lease.SettingUpdatedAt == setting.UpdatedAt && time.Now().Before(lease.ExpiresAt) {
 		a.proxyMu.Unlock()
@@ -272,13 +324,13 @@ func (a *App) resolveAccountProxy(ctx context.Context, accountID int64) (string,
 	return proxyValue, false, err
 }
 
-func (a *App) proxyLeaseLockFor(accountID int64) *sync.Mutex {
+func (a *App) proxyLeaseLockFor(accountID int64) chan struct{} {
 	a.proxyLeaseLocksMu.Lock()
 	defer a.proxyLeaseLocksMu.Unlock()
 	if lock := a.proxyLeaseLocks[accountID]; lock != nil {
 		return lock
 	}
-	lock := &sync.Mutex{}
+	lock := make(chan struct{}, 1)
 	a.proxyLeaseLocks[accountID] = lock
 	return lock
 }
@@ -313,7 +365,7 @@ func (a *App) saveAccountProxyInput(ctx context.Context, accountID int64, body a
 	return a.db.UpsertAccountProxySetting(ctx, accountID, normalized.Mode, normalized.ProxyType,
 		normalized.StaticProxy, apiURL, body.ProviderProfileID,
 		strings.TrimSpace(body.RegionCode), strings.TrimSpace(body.RegionProvince), strings.TrimSpace(body.RegionCity),
-		refreshAheadSeconds)
+		refreshAheadSeconds, body.ProtocolProxyMode)
 }
 
 func (a *App) accountExistsBeforeScan(ctx context.Context, openID string) (bool, error) {

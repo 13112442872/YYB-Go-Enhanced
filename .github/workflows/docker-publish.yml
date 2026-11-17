@@ -18,6 +18,16 @@ on:
       - main
     tags:
       - 'v*'
+    paths:
+      - 'Dockerfile'
+      - 'go.mod'
+      - 'go.sum'
+      - 'VERSION'
+      - 'cmd/**'
+      - 'internal/**'
+      - 'resource/**'
+      - 'docker-entrypoint.d/**'
+      - '.github/workflows/docker-publish.yml'
 
 permissions:
   contents: read
@@ -30,6 +40,7 @@ concurrency:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout Repository with Retry
         run: |
@@ -70,7 +81,14 @@ jobs:
             [[ "$version" == *-* ]] || tags+=("$image:latest")
           else
             branch_tag="${GITHUB_REF_NAME//\//-}"
-            tags+=("$image:$branch_tag" "$image:latest")
+            version="$(tr -d '[:space:]' < VERSION)"
+            [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || {
+              echo "Invalid VERSION for Docker tag: $version" >&2
+              exit 2
+            }
+            # Main pushes publish the VERSION tag as well as moving aliases.
+            # Tag pushes retain the immutable release path below.
+            tags+=("$image:$branch_tag" "$image:$version" "$image:latest")
           fi
 
           tags+=("$image:sha-${GITHUB_SHA::7}")
@@ -129,8 +147,16 @@ jobs:
           done
 
           for attempt in 1 2 3; do
+            if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+              build_version="${GITHUB_REF_NAME#v}"
+            else
+              build_version="$(tr -d '[:space:]' < VERSION)"
+            fi
             if docker buildx build \
               --file ./Dockerfile \
+              --build-arg VERSION="$build_version" \
+              --build-arg COMMIT="$GITHUB_SHA" \
+              --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
               --platform linux/amd64,linux/arm64 \
               --push \
               --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \

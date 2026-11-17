@@ -36,6 +36,26 @@ func TestRunsPageExposesAccountPushSettings(t *testing.T) {
 	if nav.Code != http.StatusOK || !strings.Contains(nav.Body.String(), `["/runs?view=push", "push", "独立推送"`) {
 		t.Fatalf("platform navigation does not expose independent push settings: %d %s", nav.Code, nav.Body.String())
 	}
+	for _, marker := range []string{"platformUpdateDialog", "下载 ${runtimeInfo.label", "更新到 v${updateTarget} 并重启", `/api/maintenance${check ? "?check=1" : ""}`} {
+		if !strings.Contains(nav.Body.String(), marker) {
+			t.Fatalf("platform update marker %q missing", marker)
+		}
+	}
+}
+
+func TestHealthEndpointsRemainPublicWithAuthEnabled(t *testing.T) {
+	app, err := NewApp(Config{ResourceRoot: t.TempDir(), AdminUser: "health-test", AdminPassword: "local-test-password"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Close()
+	for _, path := range []string{"/health", "/healthz"} {
+		response := httptest.NewRecorder()
+		app.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+		if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"ok":true`) {
+			t.Fatalf("anonymous %s: %d %s", path, response.Code, response.Body.String())
+		}
+	}
 }
 
 func TestHandlerServesGinRoutesAndSwaggerDocs(t *testing.T) {
@@ -71,6 +91,30 @@ func TestHandlerServesGinRoutesAndSwaggerDocs(t *testing.T) {
 	if healthBody.Code != 0 || healthBody.Msg != "success" || healthBody.Data["ok"] != true {
 		t.Fatalf("GET /health body = %#v", healthBody)
 	}
+	legacyHealth := httptest.NewRecorder()
+	handler.ServeHTTP(legacyHealth, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	if legacyHealth.Code != http.StatusOK || legacyHealth.Body.String() != health.Body.String() {
+		t.Fatalf("legacy health endpoint differs: status=%d body=%s", legacyHealth.Code, legacyHealth.Body.String())
+	}
+
+	versionResponse := httptest.NewRecorder()
+	handler.ServeHTTP(versionResponse, httptest.NewRequest(http.MethodGet, "/api/version", nil))
+	if versionResponse.Code != http.StatusOK {
+		t.Fatalf("GET /api/version status = %d", versionResponse.Code)
+	}
+	var versionBody struct {
+		Code int `json:"code"`
+		Data struct {
+			Version string `json:"version"`
+			Commit  string `json:"commit"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(versionResponse.Body.Bytes(), &versionBody); err != nil {
+		t.Fatalf("decode version JSON: %v", err)
+	}
+	if versionBody.Code != 0 || versionBody.Data.Version == "" || versionBody.Data.Commit == "" {
+		t.Fatalf("GET /api/version body = %#v", versionBody)
+	}
 
 	openapi := httptest.NewRecorder()
 	handler.ServeHTTP(openapi, httptest.NewRequest(http.MethodGet, "/openapi.json", nil))
@@ -99,7 +143,7 @@ func TestHandlerServesGinRoutesAndSwaggerDocs(t *testing.T) {
 	if !ok {
 		t.Fatalf("OpenAPI paths missing or invalid")
 	}
-	for _, path := range []string{"/quick-login", "/quick-login/{session_id}/confirm", "/wx/code", "/wx/getuserinfo", "/wx/encryptkey", "/wx/getphonenumber", "/wx/cloud", "/wx/qrcodeauth", "/wx/mpgeta8key", "/wx/appmsgext", "/wx/appmsglike", "/wxapp/getCode", "/wxapp/getPhoneNumber", "/wxapp/operateWxData", "/accounts/avatar", "/accounts/remark", "/accounts/proxy", "/accounts/proxy/test", "/api/proxy-profiles", "/api/proxy-profiles/{id}", "/api/proxy-profiles/areas/provinces", "/api/proxy-profiles/areas/cities", "/api/proxy-location/recommend", "/api/qinglong/config", "/api/qinglong/sync", "/api/qinglong/jobs", "/api/qinglong/push"} {
+	for _, path := range []string{"/quick-login", "/quick-login/{session_id}/confirm", "/account-link/{token}", "/account-link/{token}/qr", "/account-link/{token}/qr/{session_id}/poll", "/account-link/{token}/qr/{session_id}/confirm", "/api/account-links", "/qr/{session_id}/cancel", "/wx/code", "/wx/getuserinfo", "/wx/encryptkey", "/wx/getlatestuserkey", "/wx/getphonenumber", "/wx/cloud", "/wx/qrcodeauth", "/wx/mpgeta8key", "/wx/appmsgext", "/wx/appmsglike", "/wxapp/getCode", "/wxapp/getPhoneNumber", "/wxapp/operateWxData", "/accounts/repair", "/accounts/avatar", "/accounts/remark", "/accounts/proxy", "/accounts/proxy/test", "/api/proxy-profiles", "/api/proxy-profiles/{id}", "/api/proxy-profiles/areas/provinces", "/api/proxy-profiles/areas/cities", "/api/proxy-location/recommend", "/api/qinglong/config", "/api/qinglong/sync", "/api/qinglong/jobs", "/api/qinglong/push"} {
 		if _, ok := paths[path]; !ok {
 			t.Fatalf("OpenAPI path %s missing", path)
 		}
@@ -176,7 +220,7 @@ func TestHandlerServesGinRoutesAndSwaggerDocs(t *testing.T) {
 	if oldPath.Code != http.StatusNotFound {
 		t.Fatalf("POST old account feature route status = %d", oldPath.Code)
 	}
-	for _, path := range []string{"/wx/code", "/wx/encryptkey", "/wx/getphonenumber", "/wx/cloud", "/wx/mpgeta8key", "/wx/appmsgext", "/wx/appmsglike", "/wx/qrcodeauth"} {
+	for _, path := range []string{"/wx/code", "/wx/encryptkey", "/wx/getlatestuserkey", "/wx/getphonenumber", "/wx/cloud", "/wx/mpgeta8key", "/wx/appmsgext", "/wx/appmsglike", "/wx/qrcodeauth"} {
 		recorder := httptest.NewRecorder()
 		handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
 		if recorder.Code != http.StatusMethodNotAllowed {
@@ -194,6 +238,31 @@ func TestHandlerServesGinRoutesAndSwaggerDocs(t *testing.T) {
 	handler.ServeHTTP(userinfo, httptest.NewRequest(http.MethodGet, "/wx/getuserinfo", nil))
 	if userinfo.Code != http.StatusBadRequest {
 		t.Fatalf("GET /wx/getuserinfo without ref status = %d, want %d", userinfo.Code, http.StatusBadRequest)
+	}
+}
+
+func TestNormalizeEncryptKeyPayload(t *testing.T) {
+	tests := []struct {
+		name string
+		in   map[string]any
+		want string
+	}{
+		{name: "top level client name", in: map[string]any{"api_name": "getLatestUserKey", "data": map[string]any{"appid": "wx-test"}}, want: encryptKeyOperation},
+		{name: "nested client name", in: map[string]any{"data": map[string]any{"api_name": "getLatestUserKey", "version": 2}}, want: encryptKeyOperation},
+		{name: "legacy server name", in: map[string]any{"api_name": "getUserEncryptKey"}, want: encryptKeyOperation},
+		{name: "server name unchanged", in: map[string]any{"api_name": encryptKeyOperation}, want: encryptKeyOperation},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := normalizeEncryptKeyPayload(tt.in)
+			if got["api_name"] == tt.want {
+				return
+			}
+			if nested, ok := got["data"].(map[string]any); ok && nested["api_name"] == tt.want {
+				return
+			}
+			t.Fatalf("normalized payload = %#v, want api_name %q", got, tt.want)
+		})
 	}
 }
 
@@ -233,7 +302,7 @@ func TestAuthMeWithoutConfiguredAuthentication(t *testing.T) {
 	if response.Code != 0 || response.Data.AuthEnabled || response.Data.User.Username != "local" || response.Data.User.DisplayName == "" || response.Data.User.Role != "admin" {
 		t.Fatalf("GET /api/auth/me body = %#v", response)
 	}
-	for _, path := range []string{"/settings", "/users"} {
+	for _, path := range []string{"/users"} {
 		page := httptest.NewRecorder()
 		app.Handler().ServeHTTP(page, httptest.NewRequest(http.MethodGet, path, nil))
 		if page.Code != http.StatusSeeOther || page.Header().Get("Location") != "/" {
@@ -443,6 +512,8 @@ func TestSQLite普通用户账号隔离AndAdminCanInspectOwnership(t *testing.T)
 	}{
 		{method: http.MethodGet, path: "/api/qinglong/jobs?ref=" + strconv.FormatInt(foreign.ID, 10)},
 		{method: http.MethodPost, path: "/accounts/refresh", body: `{"ref":"` + strconv.FormatInt(foreign.ID, 10) + `"}`},
+		{method: http.MethodGet, path: "/accounts/proxy?ref=" + strconv.FormatInt(foreign.ID, 10)},
+		{method: http.MethodPut, path: "/accounts/proxy", body: `{"ref":"` + strconv.FormatInt(foreign.ID, 10) + `","mode":"direct","protocol_proxy_mode":"direct"}`},
 	} {
 		blocked := httptest.NewRecorder()
 		req := httptest.NewRequest(testRequest.method, testRequest.path, strings.NewReader(testRequest.body))

@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: local/yyb-go:58492557cc66
+    image: ${YYB_IMAGE:-ghcr.io/525815266/yyb-go-enhanced:latest}
     container_name: yyb-go
     restart: unless-stopped
     command:
@@ -14,9 +14,9 @@ services:
       - -resource-root
       - /app/resource
       - -keepalive-interval
-      - ${YYB_KEEPALIVE_INTERVAL:-1m}
+      - ${YYB_KEEPALIVE_INTERVAL:-2m}
       - -keepalive-ahead
-      - ${YYB_KEEPALIVE_AHEAD:-45m}
+      - ${YYB_KEEPALIVE_AHEAD:-4m}
     environment:
       TZ: ${TZ:-Asia/Shanghai}
       PANEL_TYPE: ${PANEL_TYPE:-qinglong}
@@ -35,7 +35,28 @@ services:
       YYB_AUTH_MYSQL_DSN: ${YYB_AUTH_MYSQL_DSN:-}
       YYB_ADMIN_USER: ${YYB_ADMIN_USER:-}
       YYB_ADMIN_PASSWORD: ${YYB_ADMIN_PASSWORD:-}
+      YYB_ACCOUNT_LINK_KEY: ${YYB_ACCOUNT_LINK_KEY:-}
       YYB_COOKIE_SECURE: ${YYB_COOKIE_SECURE:-false}
+      YYB_PROTOCOL_TOKEN: ${YYB_PROTOCOL_TOKEN:-}
+      YYB_INTEGRATION_TOKEN: ${YYB_INTEGRATION_TOKEN:-}
+      YYB_QINGLONG_REF_MODE: ${YYB_QINGLONG_REF_MODE:-id}
+      YYB_ENABLE_PC_LOGIN: ${YYB_ENABLE_PC_LOGIN:-false}
+      YYB_UPDATE_PROXY: ${YYB_UPDATE_PROXY:-}
+      YYB_UPDATE_VERSION_URL: ${YYB_UPDATE_VERSION_URL:-}
+      YYB_APPSTORE_REFRESH_MODE: ${YYB_APPSTORE_REFRESH_MODE:-legacy_auth}
+      YYB_DEVICE_IDENTITY: ${YYB_DEVICE_IDENTITY:-stable}
+      YYB_NOTIFY_CHANNEL: ${YYB_NOTIFY_CHANNEL:-}
+      YYB_NOTIFY_TOKEN: ${YYB_NOTIFY_TOKEN:-}
+      YYB_NOTIFY_TOPIC: ${YYB_NOTIFY_TOPIC:-}
+      YYB_NOTIFY_ACCOUNT_PUSH: ${YYB_NOTIFY_ACCOUNT_PUSH:-true}
+      YYB_CIRCUIT_BREAKER: ${YYB_CIRCUIT_BREAKER:-on}
+      YYB_LOGIN_BUDGET: ${YYB_LOGIN_BUDGET:-3}
+      YYB_LOGIN_WINDOW: ${YYB_LOGIN_WINDOW:-10m}
+      YYB_CODE_MIN_GAP: ${YYB_CODE_MIN_GAP:-3s}
+      YYB_CODE_MAX_WAIT: ${YYB_CODE_MAX_WAIT:-20s}
+      YYB_FRESH_SESSION_WINDOW: ${YYB_FRESH_SESSION_WINDOW:-2m}
+      YYB_CODE_ALLOW_APPIDS: ${YYB_CODE_ALLOW_APPIDS:-}
+      YYB_CODE_DENY_APPIDS: ${YYB_CODE_DENY_APPIDS:-}
     volumes:
       - ./data/db:/app/resource/db
       - ./data/avatars:/app/resource/avatars
@@ -58,4 +79,4 @@ services:
 networks:
   qinglong:
     external: true
-    name: qinglong_default
+    name: ${YYB_DOCKER_NETWORK:-qinglong_default}

@@ -32,7 +32,9 @@ const authSessionKey authContextKey = "session"
 
 func (a *App) requireBrowserSession() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if a.auth == nil {
+		// Let unmatched routes reach the JSON 404 handler instead of masking
+		// a misspelled automation endpoint with a login redirect.
+		if a.auth == nil || c.FullPath() == "" {
 			c.Next()
 			return
 		}
@@ -48,7 +50,7 @@ func (a *App) requireBrowserSession() gin.HandlerFunc {
 			}
 		}
 		clearSessionCookie(c.Writer, a.cfg.CookieSecure)
-		if strings.HasPrefix(c.Request.URL.Path, "/api/") {
+		if isManagementAPI(c.Request.URL.Path) {
 			writeError(c.Writer, http.StatusUnauthorized, "请先登录")
 			c.Abort()
 			return
@@ -276,10 +278,6 @@ func (a *App) handleLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
-	if a.auth == nil {
-		http.Redirect(w, r, "/", http.StatusSeeOther)
-		return
-	}
 	if r.Method != http.MethodGet {
 		writeError(w, 405, "method not allowed")
 		return
